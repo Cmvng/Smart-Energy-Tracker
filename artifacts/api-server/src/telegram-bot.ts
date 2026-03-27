@@ -194,11 +194,12 @@ export function startTelegramBot() {
       const usedFallback = rateResult.rows.length === 0;
       const amount_usd = amountRaw * rate;
 
-      await pool.query(
+      const txResult = await pool.query(
         `INSERT INTO transactions (id, account_id, type, amount_original, currency_code, amount_usd, fx_rate_used, notes, transacted_at, synced)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, NOW(), true)`,
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, NOW(), true) RETURNING id`,
         [account.id, type, amountRaw, currency, amount_usd, rate, note || null]
       );
+      const newTxId = txResult.rows[0]?.id;
 
       const s = await getTodaySummary(account.id);
       const emoji = type === "income" ? "💰" : "💸";
@@ -206,7 +207,15 @@ export function startTelegramBot() {
       const motivate = s.net > 0 ? "You're in profit! 🚀" : s.net < 0 ? "You're at a loss. Log more income! 💪" : "Exactly even 🟡";
 
       await safeSend(chatId,
-        `✅ ${typeLabel} logged! ${emoji}\n${currency} ${amountRaw.toLocaleString()} = ${formatMoney(amount_usd)} USD${usedFallback ? "\n⚠️ Currency not found, used 1:1 rate" : ""}\n━━━━━━━━━━━━━━━\n📊 Today so far:\n💚 Income:   ${formatMoney(s.income)}\n❤️ Expenses: ${formatMoney(s.expenses)}\n${netEmoji(s.net)}: ${s.net >= 0 ? "+" : "-"}${formatMoney(s.net)}\n━━━━━━━━━━━━━━━\n${motivate}`
+        `✅ ${typeLabel} logged! ${emoji}\n${currency} ${amountRaw.toLocaleString()} = ${formatMoney(amount_usd)} USD${usedFallback ? "\n⚠️ Currency not found, used 1:1 rate" : ""}\n━━━━━━━━━━━━━━━\n📊 Today so far:\n💚 Income:   ${formatMoney(s.income)}\n❤️ Expenses: ${formatMoney(s.expenses)}\n${netEmoji(s.net)}: ${s.net >= 0 ? "+" : "-"}${formatMoney(s.net)}\n━━━━━━━━━━━━━━━\n${motivate}`,
+        newTxId ? {
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "✏️ Edit this", callback_data: `edit_tx_${newTxId}` },
+              { text: "🗑️ Delete this", callback_data: `delete_tx_${newTxId}` },
+            ]],
+          },
+        } : undefined
       );
     } catch (e) {
       logger.error({ e }, "/add error");
@@ -214,7 +223,75 @@ export function startTelegramBot() {
     }
   });
 
-  // /reminders
+  // /delete_last
+  bot.onText(/^\/delete_last$/, async (msg) => {
+    const chatId = msg.chat.id;
+    try {
+      const user = await getUserByChatId(chatId);
+      if (!user) { await safeSend(chatId, NOT_LINKED); return; }
+      const account = await getUserAccount(user.id);
+      if (!account) { await safeSend(chatId, "😅 No account found."); return; }
+      const r = await pool.query(
+        `SELECT * FROM transactions WHERE account_id=$1 AND deleted_at IS NULL ORDER BY transacted_at DESC LIMIT 1`,
+        [account.id]
+      );
+      if (!r.rows.length) { await safeSend(chatId, "You have no transactions to delete! 🫙"); return; }
+      const tx = r.rows[0];
+      const typeLabel = tx.type === "income" ? "💰 Income" : "💸 Expense";
+      const dateStr = new Date(tx.transacted_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      await safeSend(chatId,
+        `🗑️ Delete this transaction?\n\n${typeLabel}: ${tx.currency_code} ${parseFloat(tx.amount_original).toLocaleString()}${tx.notes ? ` — ${tx.notes}` : ""}\n📅 ${dateStr}`,
+        {
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "✅ Yes, delete it", callback_data: `confirm_delete_${tx.id}` },
+              { text: "❌ No, keep it", callback_data: "noop" },
+            ]],
+          },
+        }
+      );
+    } catch (e) {
+      logger.error({ e }, "/delete_last error");
+      await safeSend(chatId, "😅 Something went wrong. Try again!");
+    }
+  });
+
+  // /edit_last
+  bot.onText(/^\/edit_last$/, async (msg) => {
+    const chatId = msg.chat.id;
+    try {
+      const user = await getUserByChatId(chatId);
+      if (!user) { await safeSend(chatId, NOT_LINKED); return; }
+      const account = await getUserAccount(user.id);
+      if (!account) { await safeSend(chatId, "😅 No account found."); return; }
+      const r = await pool.query(
+        `SELECT * FROM transactions WHERE account_id=$1 AND deleted_at IS NULL ORDER BY transacted_at DESC LIMIT 1`,
+        [account.id]
+      );
+      if (!r.rows.length) { await safeSend(chatId, "You have no transactions to edit! 🫙"); return; }
+      const tx = r.rows[0];
+      const typeLabel = tx.type === "income" ? "💰 Income" : "💸 Expense";
+      const dateStr = new Date(tx.transacted_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      await safeSend(chatId,
+        `✏️ Edit last transaction:\n\n${typeLabel}: ${tx.currency_code} ${parseFloat(tx.amount_original).toLocaleString()}${tx.notes ? ` — ${tx.notes}` : ""}\n📅 ${dateStr}\n\nWhat would you like to change?`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "💰 Amount", callback_data: `edit_field_${tx.id}_amount` },
+                { text: "📝 Notes", callback_data: `edit_field_${tx.id}_notes` },
+              ],
+              [{ text: "🔄 Type (Income↔Expense)", callback_data: `edit_field_${tx.id}_type` }],
+            ],
+          },
+        }
+      );
+    } catch (e) {
+      logger.error({ e }, "/edit_last error");
+      await safeSend(chatId, "😅 Something went wrong. Try again!");
+    }
+  });
+
   bot.onText(/^\/reminders$/, async (msg) => {
     const chatId = msg.chat.id;
     try {
@@ -241,7 +318,7 @@ export function startTelegramBot() {
   // /help
   bot.onText(/^\/help$/, async (msg) => {
     await safeSend(msg.chat.id,
-      `💰 Smart i-n-E Tracker Bot\n\nHere's everything I can do:\n\n📊 /summary — today's income, expenses & profit\n📅 /week — this week's totals\n💰 /add income [amount] [currency] [note]\n   Example: /add income 50000 NGN freelance\n💸 /add expense [amount] [currency] [note]\n   Example: /add expense 5000 NGN groceries\n🔢 Send any number — I'll ask income or expense\n⚙️ /reminders — change reminder schedule\n\nOpen the app for charts & full history:\n${APP_URL}`
+      `💰 Smart i-n-E Tracker Bot\n\nHere's everything I can do:\n\n📊 /summary — today's income, expenses & profit\n📅 /week — this week's totals\n💰 /add income [amount] [currency] [note]\n   Example: /add income 50000 NGN freelance\n💸 /add expense [amount] [currency] [note]\n   Example: /add expense 5000 NGN groceries\n✏️ /edit_last — edit your most recent transaction\n🗑️ /delete_last — delete your most recent transaction\n🔢 Send any number — I'll ask income or expense\n⚙️ /reminders — change reminder schedule\n\nOpen the app for charts & full history:\n${APP_URL}`
     );
   });
 
@@ -250,6 +327,51 @@ export function startTelegramBot() {
     const chatId = msg.chat.id;
     const text = (msg.text || "").trim();
     if (text.startsWith("/")) return;
+
+    // Handle edit-field sessions
+    const sessionCheck = await pool.query(
+      "SELECT state, data FROM telegram_sessions WHERE user_id = (SELECT id FROM users WHERE telegram_chat_id = $1 LIMIT 1) AND state LIKE 'editing_%'",
+      [String(chatId)]
+    );
+    if (sessionCheck.rows.length > 0) {
+      const { state, data: sessionData } = sessionCheck.rows[0];
+      const { txId } = sessionData as { txId: string };
+      const field = state.replace("editing_", "");
+      const user = await getUserByChatId(chatId);
+      if (!user) { await safeSend(chatId, NOT_LINKED); return; }
+      const account = await getUserAccount(user.id);
+      if (!account) { await safeSend(chatId, "No account found."); return; }
+
+      try {
+        let updateObj: Record<string, any> = {};
+        if (field === "amount") {
+          const newAmount = parseFloat(text);
+          if (isNaN(newAmount) || newAmount <= 0) { await safeSend(chatId, "❌ Invalid amount. Send a number like 5000"); return; }
+          const txR = await pool.query("SELECT currency_code FROM transactions WHERE id=$1 AND account_id=$2", [txId, account.id]);
+          const currency = txR.rows[0]?.currency_code || user.home_currency || "USD";
+          const rateR = await pool.query("SELECT rate_to_usd FROM currencies WHERE code=$1", [currency]);
+          const rate = rateR.rows.length ? parseFloat(rateR.rows[0].rate_to_usd) : 1;
+          updateObj = { amount_original: newAmount, amount_usd: newAmount * rate, fx_rate_used: rate };
+        } else if (field === "notes") {
+          updateObj = { notes: text };
+        } else {
+          await safeSend(chatId, "❌ Unknown field."); return;
+        }
+
+        const setClauses = Object.keys(updateObj).map((k, i) => `${k}=$${i + 3}`).join(", ");
+        await pool.query(
+          `UPDATE transactions SET ${setClauses} WHERE id=$1 AND account_id=$2`,
+          [txId, account.id, ...Object.values(updateObj)]
+        );
+        await pool.query("DELETE FROM telegram_sessions WHERE user_id = $1", [user.id]);
+        const verb = field === "amount" ? `Amount updated to ${text}!` : `Notes updated!`;
+        await safeSend(chatId, `✅ ${verb}\n\nUse /edit_last to change more or /summary to see today's totals.`);
+      } catch (e) {
+        logger.error({ e }, "edit field session error");
+        await safeSend(chatId, "❌ Could not update. Try again.");
+      }
+      return;
+    }
 
     if (/^\d+(\.\d+)?$/.test(text)) {
       const amount = parseFloat(text);
@@ -391,6 +513,122 @@ export function startTelegramBot() {
         await safeSend(chatId,
           `🎉 Great day ${greetName(user)}!\n━━━━━━━━━━━━━━━\n💚 Income:   ${formatMoney(s.income)}\n❤️ Expenses: ${formatMoney(s.expenses)}\n${netEmoji(s.net)}: ${s.net >= 0 ? "+" : "-"}${formatMoney(s.net)}\n${s.count} transactions logged\n━━━━━━━━━━━━━━━\nRest well, money boss! 🌙💰`
         );
+        return;
+      }
+
+      // Noop (cancel button)
+      if (data === "noop") {
+        await bot!.answerCallbackQuery(query.id, { text: "Cancelled" });
+        return;
+      }
+
+      // Delete transaction from /add inline button
+      if (data.startsWith("delete_tx_")) {
+        const txId = data.replace("delete_tx_", "");
+        const account = await getUserAccount(user.id);
+        if (!account) { await bot!.answerCallbackQuery(query.id, { text: "No account found" }); return; }
+        const r = await pool.query(
+          `SELECT * FROM transactions WHERE id=$1 AND account_id=$2 AND deleted_at IS NULL`,
+          [txId, account.id]
+        );
+        if (!r.rows.length) { await bot!.answerCallbackQuery(query.id, { text: "Transaction not found" }); return; }
+        const tx = r.rows[0];
+        const typeLabel = tx.type === "income" ? "💰 Income" : "💸 Expense";
+        const dateStr = new Date(tx.transacted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        await bot!.answerCallbackQuery(query.id, { text: "Confirm deletion?" });
+        await safeSend(chatId,
+          `🗑️ Are you sure you want to delete?\n\n${typeLabel}: ${tx.currency_code} ${parseFloat(tx.amount_original).toLocaleString()}${tx.notes ? ` — ${tx.notes}` : ""}\n📅 ${dateStr}`,
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "✅ Yes, delete it", callback_data: `confirm_delete_${txId}` },
+                { text: "❌ No, keep it", callback_data: "noop" },
+              ]],
+            },
+          }
+        );
+        return;
+      }
+
+      // Confirm delete
+      if (data.startsWith("confirm_delete_")) {
+        const txId = data.replace("confirm_delete_", "");
+        const account = await getUserAccount(user.id);
+        if (!account) { await bot!.answerCallbackQuery(query.id, { text: "No account found" }); return; }
+        const r = await pool.query(
+          `UPDATE transactions SET deleted_at=NOW() WHERE id=$1 AND account_id=$2 AND deleted_at IS NULL RETURNING id`,
+          [txId, account.id]
+        );
+        if (!r.rows.length) { await bot!.answerCallbackQuery(query.id, { text: "Transaction not found or already deleted" }); return; }
+        await bot!.answerCallbackQuery(query.id, { text: "✅ Deleted!" });
+        const s = await getTodaySummary(account.id);
+        await safeSend(chatId,
+          `🗑️ Transaction deleted!\n\n📊 Today updated:\n💚 Income:   ${formatMoney(s.income)}\n❤️ Expenses: ${formatMoney(s.expenses)}\n${netEmoji(s.net)}: ${s.net >= 0 ? "+" : "-"}${formatMoney(s.net)}`
+        );
+        return;
+      }
+
+      // Edit from /add inline button — show edit menu
+      if (data.startsWith("edit_tx_")) {
+        const txId = data.replace("edit_tx_", "");
+        const account = await getUserAccount(user.id);
+        if (!account) { await bot!.answerCallbackQuery(query.id, { text: "No account found" }); return; }
+        const r = await pool.query(
+          `SELECT * FROM transactions WHERE id=$1 AND account_id=$2 AND deleted_at IS NULL`,
+          [txId, account.id]
+        );
+        if (!r.rows.length) { await bot!.answerCallbackQuery(query.id, { text: "Transaction not found" }); return; }
+        const tx = r.rows[0];
+        const typeLabel = tx.type === "income" ? "💰 Income" : "💸 Expense";
+        await bot!.answerCallbackQuery(query.id, { text: "What to change?" });
+        await safeSend(chatId,
+          `✏️ Editing: ${typeLabel} — ${tx.currency_code} ${parseFloat(tx.amount_original).toLocaleString()}${tx.notes ? ` (${tx.notes})` : ""}\n\nWhat would you like to change?`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "💰 Amount", callback_data: `edit_field_${txId}_amount` },
+                  { text: "📝 Notes", callback_data: `edit_field_${txId}_notes` },
+                ],
+                [{ text: "🔄 Type (Income↔Expense)", callback_data: `edit_field_${txId}_type` }],
+              ],
+            },
+          }
+        );
+        return;
+      }
+
+      // Edit specific field
+      if (data.startsWith("edit_field_")) {
+        const parts = data.replace("edit_field_", "").split("_");
+        const field = parts.pop()!;
+        const txId = parts.join("_");
+        const account = await getUserAccount(user.id);
+        if (!account) { await bot!.answerCallbackQuery(query.id, { text: "No account" }); return; }
+
+        if (field === "type") {
+          const r = await pool.query(
+            `UPDATE transactions SET type=CASE WHEN type='income' THEN 'expense' ELSE 'income' END WHERE id=$1 AND account_id=$2 RETURNING type`,
+            [txId, account.id]
+          );
+          const newType = r.rows[0]?.type;
+          await bot!.answerCallbackQuery(query.id, { text: `✅ Changed to ${newType}!` });
+          await safeSend(chatId, `✅ Transaction type changed to ${newType === "income" ? "💰 Income" : "💸 Expense"}!`);
+          return;
+        }
+
+        await pool.query(
+          `INSERT INTO telegram_sessions (user_id, state, data, updated_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (user_id) DO UPDATE SET state=$2, data=$3, updated_at=NOW()`,
+          [user.id, `editing_${field}`, JSON.stringify({ txId })]
+        );
+        await bot!.answerCallbackQuery(query.id, { text: "Send the new value" });
+        const prompts: Record<string, string> = {
+          amount: "Send the new amount (numbers only, e.g. *5000*)",
+          notes: "Send the new notes/description:",
+        };
+        await safeSend(chatId, prompts[field] ?? "Send the new value:", { parse_mode: "Markdown" });
         return;
       }
 

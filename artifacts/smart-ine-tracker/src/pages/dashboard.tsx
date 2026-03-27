@@ -53,11 +53,15 @@ function dateLabel(dateStr: string) {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { showAddSheet, openAddSheet, closeAddSheet } = useAddSheet();
   const [timeframe, setTimeframe] = useState<"day" | "week" | "month" | "year">("week");
   const [showShare, setShowShare] = useState(false);
   const [, navigate] = useLocation();
+  const [editingTx, setEditingTx] = useState<any>(null);
+  const [deletingTx, setDeletingTx] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [globalToast, setGlobalToast] = useState("");
 
   const { data: summary, loading: summaryLoading, reload: reloadSummary } =
     useApi<any>(`/api/transactions/summary?timeframe=${timeframe}`);
@@ -65,6 +69,34 @@ export default function Dashboard() {
     useApi<any[]>(`/api/transactions?timeframe=${timeframe}`);
 
   const reload = useCallback(() => { reloadSummary(); reloadTx(); }, [reloadSummary, reloadTx]);
+  const showGlobalToast = useCallback((msg: string) => {
+    setGlobalToast(msg);
+    setTimeout(() => setGlobalToast(""), 3000);
+  }, []);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deletingTx || deleting) return;
+    const tx = deletingTx;
+    setDeleting(true);
+    setDeletingTx(null);
+    const originalTxs = transactions ?? [];
+    reloadTx();
+    try {
+      const res = await fetch(`/api/transactions/${tx.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("fail");
+      showGlobalToast("🗑️ Transaction deleted");
+      reloadSummary();
+      reloadTx();
+    } catch {
+      showGlobalToast("❌ Could not delete. Try again.");
+      reloadTx();
+    } finally {
+      setDeleting(false);
+    }
+  }, [deletingTx, deleting, token, reloadSummary, reloadTx, transactions, showGlobalToast]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number | null>(null);
@@ -265,7 +297,7 @@ export default function Dashboard() {
                       <div key={date}>
                         <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{dateLabel(date)}</p>
                         <div className="space-y-2">
-                          {txs.map((tx: any) => <TxRow key={tx.id} tx={tx} />)}
+                          {txs.map((tx: any) => <TxRow key={tx.id} tx={tx} onEdit={setEditingTx} onDelete={setDeletingTx} />)}
                         </div>
                       </div>
                     ))}
@@ -289,11 +321,20 @@ export default function Dashboard() {
                         .slice()
                         .sort((a: any, b: any) => new Date(b.transacted_at).getTime() - new Date(a.transacted_at).getTime())
                         .map((tx: any) => (
-                          <TxTableRow key={tx.id} tx={tx} />
+                          <TxTableRow key={tx.id} tx={tx} onEdit={setEditingTx} onDelete={setDeletingTx} />
                         ))}
                     </tbody>
                   </table>
                 </div>
+
+                {/* View All link */}
+                <button
+                  onClick={() => navigate("/history")}
+                  className="w-full py-3 text-center text-sm font-semibold rounded-2xl transition-colors hover:bg-gray-50"
+                  style={{ color: GREEN }}
+                >
+                  View All →
+                </button>
               </>
             )}
           </div>
@@ -318,6 +359,70 @@ export default function Dashboard() {
           onSaved={reload}
           userCurrency={user?.home_currency || "USD"}
         />
+      )}
+
+      {/* Edit Sheet */}
+      {editingTx && (
+        <AddSheet
+          onClose={() => setEditingTx(null)}
+          onSaved={() => { reload(); setEditingTx(null); }}
+          userCurrency={user?.home_currency || "USD"}
+          editTx={editingTx}
+        />
+      )}
+
+      {/* Delete Confirmation Sheet */}
+      {deletingTx && createPortal(
+        <>
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40, backdropFilter: "blur(4px)" }}
+            onClick={() => setDeletingTx(null)}
+          />
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "white", borderRadius: "24px 24px 0 0", zIndex: 50, padding: "24px 20px 40px", boxShadow: "0 -8px 40px rgba(0,0,0,0.15)" }}>
+            <div className="w-10 h-1.5 bg-gray-300 rounded-full mx-auto mb-5" />
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Delete this transaction?</h3>
+            <div className="bg-gray-50 rounded-2xl p-4 mb-6 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: deletingTx.type === "income" ? GREEN : RED }} />
+                <span className="text-sm font-semibold text-gray-700">{deletingTx.type === "income" ? "Income" : "Expense"}</span>
+              </div>
+              <p className="text-sm text-gray-800 font-bold">
+                {deletingTx.type === "income" ? "+" : "-"}{fmt(Number(deletingTx.amount_original))} {deletingTx.currency_code}
+              </p>
+              {deletingTx.currency_code !== "USD" && deletingTx.amount_usd && (
+                <p className="text-xs text-gray-400">≈ ${fmt(Number(deletingTx.amount_usd))} USD</p>
+              )}
+              <p className="text-xs text-gray-500">{format(new Date(deletingTx.transacted_at), "MMM d, yyyy · h:mm a")}</p>
+              {deletingTx.notes && <p className="text-sm text-gray-600 italic">"{deletingTx.notes}"</p>}
+            </div>
+            <div className="space-y-3">
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleting}
+                className="w-full py-4 rounded-2xl font-bold text-white text-sm transition-all active:scale-95 disabled:opacity-60"
+                style={{ background: RED }}
+              >
+                {deleting ? "Deleting…" : "Yes, Delete It"}
+              </button>
+              <button
+                onClick={() => setDeletingTx(null)}
+                className="w-full py-4 rounded-2xl font-bold text-sm border-2 transition-all active:scale-95"
+                style={{ borderColor: "#E5E5E5", color: "#666" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Global Toast */}
+      {globalToast && createPortal(
+        <div style={{ position: "fixed", bottom: 32, left: "50%", transform: "translateX(-50%)", background: "#111827", color: "white", padding: "12px 20px", borderRadius: "16px", fontSize: "14px", fontWeight: 600, zIndex: 60, boxShadow: "0 10px 30px rgba(0,0,0,0.3)", textAlign: "center", maxWidth: 340 }}>
+          {globalToast}
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -345,11 +450,23 @@ function SummaryCard({
   );
 }
 
-function TxRow({ tx }: { tx: any }) {
+function TxRow({ tx, onEdit, onDelete }: { tx: any; onEdit: (tx: any) => void; onDelete: (tx: any) => void }) {
   const isIncome = tx.type === "income";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
   return (
     <div
-      className="flex items-center gap-3 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 min-h-[68px]"
+      className="flex items-center gap-2 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 min-h-[68px]"
       style={{ borderLeft: `4px solid ${isIncome ? GREEN : RED}` }}
     >
       <div
@@ -372,12 +489,45 @@ function TxRow({ tx }: { tx: any }) {
           <p className="text-xs text-gray-400 mt-0.5">≈ ${fmt(Number(tx.amount_usd))}</p>
         )}
       </div>
+      <div ref={menuRef} className="relative shrink-0 ml-1">
+        <button
+          onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+          className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 transition-colors text-base"
+        >
+          ⋮
+        </button>
+        {menuOpen && (
+          <div className="absolute right-0 top-9 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden w-48">
+            <button onClick={() => { setMenuOpen(false); onEdit(tx); }}
+              className="w-full flex items-center gap-2.5 px-4 py-3.5 text-sm font-medium text-gray-700 hover:bg-gray-50 text-left">
+              ✏️ Edit transaction
+            </button>
+            <div className="border-t border-gray-50" />
+            <button onClick={() => { setMenuOpen(false); onDelete(tx); }}
+              className="w-full flex items-center gap-2.5 px-4 py-3.5 text-sm font-medium text-red-600 hover:bg-red-50 text-left">
+              🗑️ Delete transaction
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function TxTableRow({ tx }: { tx: any }) {
+function TxTableRow({ tx, onEdit, onDelete }: { tx: any; onEdit: (tx: any) => void; onDelete: (tx: any) => void }) {
   const isIncome = tx.type === "income";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
   return (
     <tr className="hover:bg-gray-50/50 transition-colors">
       <td className="px-5 py-4 text-gray-500 text-xs whitespace-nowrap">
@@ -407,6 +557,29 @@ function TxTableRow({ tx }: { tx: any }) {
       <td className="px-5 py-4 text-right text-gray-600 font-semibold">
         ${fmt(Number(tx.amount_usd ?? tx.amount_original))}
       </td>
+      <td className="px-3 py-4">
+        <div ref={menuRef} className="relative">
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 transition-colors"
+          >
+            ⋮
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-9 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden w-48">
+              <button onClick={() => { setMenuOpen(false); onEdit(tx); }}
+                className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 text-left">
+                ✏️ Edit transaction
+              </button>
+              <div className="border-t border-gray-50" />
+              <button onClick={() => { setMenuOpen(false); onDelete(tx); }}
+                className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 text-left">
+                🗑️ Delete transaction
+              </button>
+            </div>
+          )}
+        </div>
+      </td>
     </tr>
   );
 }
@@ -417,16 +590,17 @@ const ALL_CURRENCIES = [
 ];
 
 function AddSheet({
-  onClose, onSaved, userCurrency,
+  onClose, onSaved, userCurrency, editTx,
 }: {
-  onClose: () => void; onSaved: () => void; userCurrency: string;
+  onClose: () => void; onSaved: () => void; userCurrency: string; editTx?: any;
 }) {
   const { token } = useAuth();
-  const [type, setType] = useState<"expense" | "income">("expense");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState(userCurrency);
-  const [notes, setNotes] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 16));
+  const isEdit = !!editTx;
+  const [type, setType] = useState<"expense" | "income">(editTx?.type ?? "expense");
+  const [amount, setAmount] = useState(editTx ? String(editTx.amount_original) : "");
+  const [currency, setCurrency] = useState(editTx?.currency_code ?? userCurrency);
+  const [notes, setNotes] = useState(editTx?.notes ?? "");
+  const [date, setDate] = useState(editTx ? new Date(editTx.transacted_at).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16));
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [currencies, setCurrencies] = useState<any[]>([]);
@@ -449,8 +623,10 @@ function AddSheet({
     if (!amount || parseFloat(amount) <= 0) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/transactions", {
-        method: "POST",
+      const url = isEdit ? `/api/transactions/${editTx.id}` : "/api/transactions";
+      const method = isEdit ? "PATCH" : "POST";
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           type, amount_original: parseFloat(amount),
@@ -463,9 +639,14 @@ function AddSheet({
         setTimeout(() => setToast(""), 3000);
         return;
       }
-      const sign = type === "income" ? "+" : "-";
-      setToast(`✅ ${type === "income" ? "Income" : "Expense"} saved — ${sign}${fmt(parseFloat(amount))} ${currency}`);
-      setTimeout(() => { setToast(""); onSaved(); onClose(); }, 1500);
+      if (isEdit) {
+        setToast("✅ Transaction updated!");
+        setTimeout(() => { setToast(""); onSaved(); onClose(); }, 1200);
+      } else {
+        const sign = type === "income" ? "+" : "-";
+        setToast(`✅ ${type === "income" ? "Income" : "Expense"} saved — ${sign}${fmt(parseFloat(amount))} ${currency}`);
+        setTimeout(() => { setToast(""); onSaved(); onClose(); }, 1500);
+      }
     } catch {
       setToast("❌ Connection error. Try again.");
       setTimeout(() => setToast(""), 3000);
@@ -487,7 +668,7 @@ function AddSheet({
 
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-3 pb-3">
-        <span className="text-base font-bold" style={{ color: NAVY }}>Quick Add</span>
+        <span className="text-base font-bold" style={{ color: NAVY }}>{isEdit ? "Edit Transaction" : "Quick Add"}</span>
         <button
           onClick={onClose}
           className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-xl leading-none font-bold hover:bg-gray-200 transition-colors"
@@ -593,7 +774,7 @@ function AddSheet({
           {saving ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (
-            `${type === "income" ? "Save Income +" : "Save Expense −"}`
+            isEdit ? "Save Changes ✓" : `${type === "income" ? "Save Income +" : "Save Expense −"}`
           )}
         </button>
       </div>

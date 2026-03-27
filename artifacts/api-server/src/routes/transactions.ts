@@ -158,7 +158,17 @@ router.get("/summary", requireAuth, async (req: AuthRequest, res: Response) => {
 
 router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
   const timeframe = (req.query.timeframe as string) || "month";
-  const periodStart = getTimeframeStart(timeframe);
+  const fromParam = req.query.from as string | undefined;
+  const toParam = req.query.to as string | undefined;
+  const typeFilter = req.query.type as string | undefined;
+  const search = req.query.search as string | undefined;
+  const sortParam = req.query.sort as string | undefined;
+  const offsetParam = parseInt(req.query.offset as string || "0", 10);
+  const limitParam = parseInt(req.query.limit as string || "0", 10);
+
+  const useCustomRange = !!(fromParam || toParam);
+  const periodStart = useCustomRange ? (fromParam ? new Date(fromParam) : new Date(0)) : getTimeframeStart(timeframe);
+  const periodEnd = useCustomRange && toParam ? new Date(toParam + "T23:59:59.999Z") : null;
 
   try {
     const userAccounts = await db
@@ -167,23 +177,41 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
       .where(eq(accountsTable.user_id, req.userId!));
 
     if (userAccounts.length === 0) {
-      res.json([]);
+      res.json(limitParam > 0 ? { transactions: [], total: 0 } : []);
       return;
     }
 
     const accountIds = userAccounts.map((a) => a.id);
     const idArr = sql`ARRAY[${sql.join(accountIds.map((id) => sql`${id}`), sql`, `)}]::text[]`;
 
-    const transactions = await db
-      .select()
-      .from(transactionsTable)
-      .where(and(
-        sql`${transactionsTable.account_id} = ANY(${idArr})`,
-        gte(transactionsTable.transacted_at, periodStart),
-        isNull(transactionsTable.deleted_at)
-      ))
-      .orderBy(desc(transactionsTable.transacted_at));
+    const conditions = [
+      sql`${transactionsTable.account_id} = ANY(${idArr})`,
+      gte(transactionsTable.transacted_at, periodStart),
+      isNull(transactionsTable.deleted_at),
+    ];
+    if (periodEnd) conditions.push(sql`${transactionsTable.transacted_at} <= ${periodEnd}`);
+    if (typeFilter && (typeFilter === "income" || typeFilter === "expense")) {
+      conditions.push(eq(transactionsTable.type, typeFilter));
+    }
+    if (search) {
+      conditions.push(sql`LOWER(${transactionsTable.notes}) LIKE ${`%${search.toLowerCase()}%`}`);
+    }
 
+    let orderBy;
+    if (sortParam === "oldest") orderBy = transactionsTable.transacted_at;
+    else if (sortParam === "largest") orderBy = sql`${transactionsTable.amount_usd}::numeric DESC`;
+    else orderBy = desc(transactionsTable.transacted_at);
+
+    if (limitParam > 0) {
+      const [{ total }] = await db.select({ total: count() }).from(transactionsTable).where(and(...conditions));
+      const rows = await db.select().from(transactionsTable).where(and(...conditions))
+        .orderBy(orderBy as any).offset(offsetParam).limit(limitParam);
+      res.json({ transactions: rows, total });
+      return;
+    }
+
+    const transactions = await db.select().from(transactionsTable)
+      .where(and(...conditions)).orderBy(orderBy as any);
     res.json(transactions);
   } catch (err) {
     req.log.error({ err }, "List transactions error");
@@ -241,6 +269,50 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.patch("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { type, amount_original, currency_code, notes, transacted_at } = req.body;
+
+  try {
+    const userAccounts = await db.select({ id: accountsTable.id }).from(accountsTable).where(eq(accountsTable.user_id, req.userId!));
+    const accountIds = userAccounts.map((a) => a.id);
+    if (accountIds.length === 0) {
+      res.status(403).json({ error: "unauthorized", message: "Unauthorized" });
+      return;
+    }
+    const idArr = sql`ARRAY[${sql.join(accountIds.map((aid) => sql`${aid}`), sql`, `)}]::text[]`;
+    const [existing] = await db.select().from(transactionsTable).where(
+      and(eq(transactionsTable.id, id), sql`${transactionsTable.account_id} = ANY(${idArr})`, isNull(transactionsTable.deleted_at))
+    );
+    if (!existing) {
+      res.status(403).json({ error: "unauthorized", message: "Unauthorized" });
+      return;
+    }
+
+    const updates: Partial<typeof transactionsTable.$inferInsert> = {};
+    if (type) updates.type = type;
+    if (notes !== undefined) updates.notes = notes;
+    if (transacted_at) updates.transacted_at = new Date(transacted_at);
+
+    if (amount_original !== undefined || currency_code !== undefined) {
+      const newCurrency = currency_code ?? existing.currency_code;
+      const newAmount = amount_original !== undefined ? parseFloat(String(amount_original)) : parseFloat(String(existing.amount_original));
+      const [rateRow] = await db.select().from(currenciesTable).where(eq(currenciesTable.code, newCurrency));
+      const rate = rateRow ? parseFloat(String(rateRow.rate_to_usd)) : 1;
+      updates.currency_code = newCurrency;
+      updates.amount_original = String(newAmount) as any;
+      updates.amount_usd = String(Math.round(newAmount * rate * 100) / 100) as any;
+      updates.fx_rate_used = String(rate) as any;
+    }
+
+    const [updated] = await db.update(transactionsTable).set(updates).where(eq(transactionsTable.id, id)).returning();
+    res.json(updated);
+  } catch (err) {
+    req.log.error({ err }, "Update transaction error");
+    res.status(500).json({ error: "server_error", message: "Internal server error" });
+  }
+});
+
 router.delete("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   try {
@@ -259,7 +331,7 @@ router.delete("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
     await db.update(transactionsTable).set({ deleted_at: new Date() }).where(eq(transactionsTable.id, id));
-    res.json({ success: true });
+    res.json({ success: true, message: "Transaction deleted" });
   } catch (err) {
     req.log.error({ err }, "Delete transaction error");
     res.status(500).json({ error: "server_error", message: "Internal server error" });

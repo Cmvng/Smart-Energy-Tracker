@@ -11,6 +11,7 @@ import Register from "@/pages/register";
 import Dashboard from "@/pages/dashboard";
 import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
+import History from "@/pages/history";
 import NotFound from "@/pages/not-found";
 import BottomNav from "@/components/BottomNav";
 import Sidebar from "@/components/Sidebar";
@@ -51,7 +52,7 @@ function RootRoute() {
   return <Landing />;
 }
 
-const CHROME_PATHS = ["/dashboard", "/analytics", "/settings"];
+const CHROME_PATHS = ["/dashboard", "/analytics", "/settings", "/history"];
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -101,6 +102,9 @@ function AppRouter() {
         </Route>
         <Route path="/settings">
           <ProtectedRoute component={Settings} />
+        </Route>
+        <Route path="/history">
+          <ProtectedRoute component={History} />
         </Route>
         <Route component={NotFound} />
       </Switch>

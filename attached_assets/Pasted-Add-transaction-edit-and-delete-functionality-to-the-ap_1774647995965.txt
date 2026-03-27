@@ -1,0 +1,173 @@
+Add transaction edit and delete functionality 
+to the app. Do not break any existing features.
+
+═══════════════════════════════════════════════
+BACKEND — NEW/UPDATED ROUTES
+═══════════════════════════════════════════════
+
+PATCH /api/transactions/:id
+Update an existing transaction:
+- Accept body: { type, amount_original, currency_code, 
+  notes, transacted_at }
+- Re-calculate amount_usd using current rate from 
+  currencies table:
+  amount_usd = amount_original * rate_to_usd
+- Update fx_rate_used with the current rate
+- Only allow user to edit their OWN transactions:
+  Check transaction belongs to user's account before 
+  updating. If not: return 403 { error: 'Unauthorized' }
+- Return updated transaction object
+
+DELETE /api/transactions/:id (fix existing):
+- Soft delete: SET deleted_at = NOW()
+- Only allow user to delete their OWN transactions
+- Return { success: true, message: 'Transaction deleted' }
+
+═══════════════════════════════════════════════
+FRONTEND — TRANSACTION LIST CHANGES
+═══════════════════════════════════════════════
+
+Each transaction row in the dashboard list must have 
+a "..." (three dots) menu button on the right side.
+
+THREE DOTS MENU:
+- Small grey "⋮" button, 32px tap target
+- Tapping it opens a small popup menu with two options:
+  ✏️ Edit transaction
+  🗑️ Delete transaction
+- Menu appears above or below the row 
+  (whichever has more space)
+- Tapping anywhere outside closes the menu
+- Only one menu open at a time
+
+═══════════════════════════════════════════════
+DELETE FLOW
+═══════════════════════════════════════════════
+When user taps "🗑️ Delete transaction":
+
+1. Show confirmation bottom sheet (slides up):
+   Title: "Delete this transaction?"
+   Show the transaction details:
+   - Type (Income/Expense) with colored dot
+   - Amount in original currency
+   - USD equivalent
+   - Date and notes
+   
+   Two buttons:
+   - "Yes, Delete It" — red background, full width
+   - "Cancel" — grey outline, full width below
+
+2. On confirm:
+   - Call DELETE /api/transactions/:id
+   - Remove transaction from list immediately 
+     (optimistic update)
+   - Refresh summary cards (income/expense/net totals)
+   - Toast: "🗑️ Transaction deleted"
+   - If API call fails: put transaction back in list,
+     toast "❌ Could not delete. Try again."
+
+═══════════════════════════════════════════════
+EDIT FLOW  
+═══════════════════════════════════════════════
+When user taps "✏️ Edit transaction":
+
+Open the same Quick Add bottom sheet BUT pre-filled 
+with the existing transaction data:
+
+- Income/Expense toggle: pre-selected to current type
+- Amount: pre-filled with amount_original
+- Currency: pre-selected to current currency_code
+- Notes: pre-filled with current notes
+- Date/time: pre-filled with current transacted_at
+
+Sheet title changes from "Quick Add" to "Edit Transaction"
+Save button text: "Save Changes ✓"
+
+On save:
+1. Call PATCH /api/transactions/:id with new values
+2. Update transaction in list immediately
+3. Refresh summary cards
+4. Toast: "✅ Transaction updated!"
+5. Close sheet
+6. If API fails: show error toast, keep sheet open
+
+═══════════════════════════════════════════════
+TRANSACTION HISTORY PAGE (new)
+═══════════════════════════════════════════════
+Add a full transaction history view accessible from 
+the dashboard. Add a "View All →" link at the bottom 
+of the dashboard transaction list.
+
+This opens a full page /history with:
+
+FILTERS BAR (sticky at top below header):
+- Date range: This Week | This Month | 3 Months | 
+  All Time | Custom (date pickers)
+- Type filter: All | Income Only | Expense Only
+- Sort: Newest First | Oldest First | Largest First
+
+SEARCH BAR:
+- Search by notes/description
+- Real time filtering as user types
+- Shows "X results" count
+
+TRANSACTION LIST:
+- Same row design as dashboard
+- Grouped by date with date headers
+- Each row has the "⋮" three dots menu (edit/delete)
+- Load 50 at a time, "Load more" button at bottom
+- Shows total count: "Showing 50 of 124 transactions"
+
+BULK ACTIONS:
+- Checkbox appears on each row when user taps 
+  "Select" button in header
+- When checkboxes visible: header shows 
+  "X selected" + "Delete Selected" red button
+- Confirm before bulk delete:
+  "Delete X transactions? This cannot be undone."
+  (soft delete — sets deleted_at, data still in DB)
+
+EMPTY STATES:
+- No transactions at all: 
+  "No transactions yet — tap + to add your first"
+- No results for filter/search:
+  "No transactions match your search"
+  + "Clear filters" button
+
+═══════════════════════════════════════════════
+TELEGRAM BOT — ADD EDIT/DELETE
+═══════════════════════════════════════════════
+After logging a transaction via bot, add inline buttons:
+
+After every successful /add command, include:
+[✏️ Edit this] [🗑️ Delete this]
+
+/delete_last command:
+- Find the most recent non-deleted transaction 
+  for this user
+- Show it and ask to confirm:
+  "Delete this transaction?
+   [type] [amount] [currency] — [notes]
+   [Yes, delete ✓] [No, keep it ✗]"
+- On confirm: soft delete, show updated today summary
+
+/edit_last command:
+- Find most recent transaction
+- Show current values
+- Ask: "What would you like to change?
+  [💰 Amount] [📝 Notes] [📅 Date]"
+- Guide through each change step by step
+- Save with PATCH /api/transactions/:id
+
+═══════════════════════════════════════════════
+FINAL STEPS
+═══════════════════════════════════════════════
+After building everything:
+1. cd client && npm run build
+2. Restart server
+3. Confirm PATCH /api/transactions/:id works by 
+   updating a test transaction
+4. Confirm DELETE /api/transactions/:id soft deletes
+5. Confirm transaction still exists in DB with 
+   deleted_at set (not actually removed)
+6. List every feature successfully added

@@ -32,7 +32,8 @@ A full-stack mobile-first (max 430px) Income & Expense Tracker with JWT auth, mu
 ### Frontend Pages
 - `/login` — JWT login form with demo credentials hint
 - `/register` — User registration with mode (individual/business) and home currency selection
-- `/dashboard` — Timeframe tabs (Today/Week/Month/Year), income/expense/net cards, smart insight banner, grouped transaction list, FAB "+" button triggers inline bottom sheet
+- `/dashboard` — Timeframe tabs (Today/Week/Month/Year), income/expense/net cards, smart insight banner, grouped transaction list with ⋮ edit/delete menus, FAB "+" button, "View All →" link
+- `/history` — Full transaction history: sticky filters (date range, type, sort), real-time search, paginated list (50 at a time), ⋮ edit/delete per row, bulk select+delete mode
 - `/analytics` — 7d/30d bar chart (recharts), net P&L line chart, smart insight cards, stats row
 - `/settings` — User profile, home currency, individual/business mode, notification frequency, CSV export, exchange rate refresh, test reminder, logout
 
@@ -107,9 +108,10 @@ Formula: `amount_usd = amount_original * rate_to_usd`
 
 ### Transactions
 - `POST /api/transactions` — Create transaction (auto-detects user's account, FX conversion)
-- `GET /api/transactions` — Flat array list with ?timeframe=day|week|month|year
+- `GET /api/transactions` — List with ?timeframe=day|week|month|year OR ?from=&to=&type=&sort=&search=&limit=&offset= (history/paginated mode returns {transactions,total})
 - `GET /api/transactions/summary` — Income/expense/net/insight_message summary for a timeframe
-- `DELETE /api/transactions/:id` — Soft delete
+- `PATCH /api/transactions/:id` — Update transaction (re-calculates amount_usd from current rate; ownership-checked, returns 403 if unauthorized)
+- `DELETE /api/transactions/:id` — Soft delete (sets deleted_at; ownership-checked)
 
 ### Analytics
 - `GET /api/analytics/chart?days=7|30` — Daily P&L chart data
