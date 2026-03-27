@@ -43,9 +43,8 @@ export default function Settings() {
   const [testing, setTesting] = useState(false);
 
   const [tgConnected, setTgConnected] = useState(false);
-  const [tgCode, setTgCode] = useState<string | null>(null);
-  const [tgLoading, setTgLoading] = useState(false);
   const [tgDisconnecting, setTgDisconnecting] = useState(false);
+  const [tgPolling, setTgPolling] = useState(false);
 
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -139,22 +138,34 @@ export default function Settings() {
     }
   };
 
-  const handleGetLinkCode = async () => {
-    setTgLoading(true);
-    setTgCode(null);
-    try {
-      const res = await fetch("/api/telegram/link-code", { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) {
-        const data = await res.json();
-        setTgCode(data.code);
-      } else {
-        showToast("❌ Could not generate code", false);
+  const handleActivateTelegram = () => {
+    if (!user?.id) return;
+    const url = `https://t.me/smartinetracker_bot?start=${user.id}`;
+    window.open(url, "_blank");
+
+    setTgPolling(true);
+    let attempts = 0;
+    const maxAttempts = 20;
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await fetch("/api/telegram/status", { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.connected) {
+            setTgConnected(true);
+            setTgPolling(false);
+            clearInterval(interval);
+            showToast("✅ Telegram connected!");
+            return;
+          }
+        }
+      } catch { /* ignore */ }
+      if (attempts >= maxAttempts) {
+        setTgPolling(false);
+        clearInterval(interval);
       }
-    } catch {
-      showToast("❌ Connection error", false);
-    } finally {
-      setTgLoading(false);
-    }
+    }, 3000);
   };
 
   const handleDisconnectTelegram = async () => {
@@ -163,7 +174,6 @@ export default function Settings() {
       const res = await fetch("/api/telegram/disconnect", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         setTgConnected(false);
-        setTgCode(null);
         showToast("✅ Telegram disconnected");
       } else {
         showToast("❌ Could not disconnect", false);
@@ -277,59 +287,36 @@ export default function Settings() {
           </button>
         </Section>
 
-        <Section title="Telegram Bot">
+        <Section title="Telegram Notifications">
           {tgConnected ? (
             <div className="px-4 py-4">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-1">
                 <span className="text-xl">✅</span>
-                <span className="text-sm font-semibold text-gray-800">Telegram connected 🎉</span>
+                <span className="text-sm font-semibold text-gray-800">Telegram Active — you'll get daily reminders</span>
               </div>
-              <p className="text-xs text-gray-500 mb-3">You'll receive daily reminders and can log transactions directly in Telegram.</p>
+              <p className="text-xs text-gray-400 mb-4">Log transactions and check your finances directly in Telegram.</p>
               <button
                 onClick={handleDisconnectTelegram}
                 disabled={tgDisconnecting}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold border transition-colors disabled:opacity-60"
-                style={{ borderColor: RED, color: RED }}
+                className="text-xs font-semibold transition-colors disabled:opacity-60"
+                style={{ color: RED }}
               >
                 {tgDisconnecting ? "Disconnecting…" : "Disconnect"}
               </button>
             </div>
           ) : (
             <div className="px-4 py-4">
-              <p className="text-xs text-gray-500 mb-3">Connect Telegram to log transactions and get daily reminders from your money buddy 💰</p>
-              {tgCode ? (
-                <div className="mb-3">
-                  <div
-                    className="text-4xl font-black tracking-[0.25em] text-center py-4 rounded-2xl mb-3"
-                    style={{ background: `${NAVY}10`, color: NAVY, fontVariantNumeric: "tabular-nums" }}
-                  >
-                    {tgCode}
-                  </div>
-                  <div className="text-xs text-gray-500 space-y-1 mb-3">
-                    <p className="font-medium text-gray-700">To link your account:</p>
-                    <p>1. Open Telegram</p>
-                    <p>2. Search <span className="font-mono font-semibold text-gray-800">@SmartIneTrackerBot</span></p>
-                    <p>3. Send: <span className="font-mono font-semibold text-gray-800">/link {tgCode}</span></p>
-                    <p className="text-gray-400 mt-1">Code expires in 10 minutes</p>
-                  </div>
-                  <button
-                    onClick={handleGetLinkCode}
-                    disabled={tgLoading}
-                    className="w-full py-2 rounded-xl text-xs font-semibold border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
-                  >
-                    Get new code
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={handleGetLinkCode}
-                  disabled={tgLoading}
-                  className="w-full py-3 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-60"
-                  style={{ background: NAVY }}
-                >
-                  {tgLoading ? "Generating…" : "🔗 Get Link Code"}
-                </button>
-              )}
+              <button
+                onClick={handleActivateTelegram}
+                disabled={tgPolling}
+                className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-70"
+                style={{ background: GREEN }}
+              >
+                {tgPolling ? "⏳ Waiting for Telegram…" : "🔔 Activate Telegram Notifications"}
+              </button>
+              <p className="text-xs text-gray-400 text-center mt-2">
+                {tgPolling ? "Tap Start in Telegram, then come back here" : "Opens Telegram — just tap Start"}
+              </p>
             </div>
           )}
         </Section>

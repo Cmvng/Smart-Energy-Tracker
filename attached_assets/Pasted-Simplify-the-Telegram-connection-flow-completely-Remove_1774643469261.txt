@@ -1,0 +1,52 @@
+Simplify the Telegram connection flow completely. 
+Remove the 6-digit code system entirely. 
+Replace it with a single "Activate Telegram Notifications" button that works like this:
+
+HOW IT WORKS:
+When user clicks "Activate Telegram Notifications" in the app Settings:
+1. App opens Telegram automatically using this deep link:
+   https://t.me/smartinetracker_bot?start=[user_id]
+   (where user_id is the logged-in user's UUID from the database)
+2. Telegram opens on the user's phone with the bot already loaded
+3. User just taps the "START" button that Telegram shows automatically
+4. The bot receives /start [user_id] as the message
+5. Bot looks up the user_id in the database, saves their telegram chat_id
+6. Bot replies: "🎉 You're all connected [name]! 
+   I'll send you friendly reminders to track your finances.
+   Try /summary to see today's numbers!"
+7. Back in the app Settings, the button automatically updates to 
+   show "✅ Telegram Connected" after 3 seconds
+
+SETTINGS SCREEN changes:
+- Remove the "Get Link Code" button and the 6-digit code display
+- Remove all instructions about copying codes
+- Replace with ONE button: "🔔 Activate Telegram Notifications"
+  - Green background, full width, large text
+  - Below the button: small grey text "Opens Telegram — just tap Start"
+- When already connected: show
+  "✅ Telegram Active — you'll get daily reminders"
+  + small red "Disconnect" text link below it
+
+BOT changes:
+- /start command now accepts a parameter: /start [user_id]
+- If user_id parameter exists: look up user in database by id, 
+  save chat_id to that user, reply with welcome + their name
+- If no parameter (user opened bot directly without app link):
+  reply "To connect, open the Smart i-n-E Tracker app → 
+  Settings → Activate Telegram Notifications 🔗"
+- Remove all /link code logic entirely
+- Remove telegram_link_codes table
+
+This must work on both mobile and desktop:
+- Mobile: tapping the button opens the Telegram app directly
+- Desktop: tapping the button opens web.telegram.org with the bot loaded
+  Use this URL format: https://t.me/smartinetracker_bot?start=[user_id]
+  This works on both automatically
+
+After building, test by:
+1. Opening Settings in the app
+2. Clicking "Activate Telegram Notifications" 
+3. Confirming it opens Telegram with the bot
+4. Tapping Start in Telegram
+5. Confirming the bot replies with the user's name
+6. Confirming Settings shows "✅ Telegram Active"

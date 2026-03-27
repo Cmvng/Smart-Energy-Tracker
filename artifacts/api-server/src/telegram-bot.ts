@@ -5,7 +5,6 @@ import {
   accountsTable,
   transactionsTable,
   currenciesTable,
-  telegramLinkCodesTable,
   telegramSessionsTable,
 } from "@workspace/db/schema";
 import { eq, and, gte, isNotNull, sql } from "drizzle-orm";
@@ -199,44 +198,28 @@ async function clearSession(userId: string) {
 
 // ─── bot commands ─────────────────────────────────────────────────────────────
 
-async function handleStart(chatId: number) {
-  await safeSend(
-    chatId,
-    `Hey! 👋 Welcome to Smart i-n-E Tracker!\nI'm your personal money buddy 💰\n\nTo link your account:\n1. Open the app\n2. Go to Settings → Connect Telegram\n3. Send me: /link [your 6-digit code]`
-  );
-}
+async function handleStart(chatId: number, userId?: string) {
+  if (userId && userId.trim().length > 0) {
+    const uid = userId.trim();
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, uid));
 
-async function handleLink(chatId: number, code: string) {
-  if (!code || !/^\d{6}$/.test(code.trim())) {
-    await safeSend(chatId, "Please send a valid 6-digit code. Example: `/link 123456`");
-    return;
-  }
+    if (!user) {
+      await safeSend(chatId, "Hmm, I couldn't find that account 🤔\nTry again from the app: Settings → Activate Telegram Notifications 🔗");
+      return;
+    }
 
-  const now = new Date();
-  const [linkRow] = await db
-    .select()
-    .from(telegramLinkCodesTable)
-    .where(
-      and(
-        eq(telegramLinkCodesTable.code, code.trim()),
-        eq(telegramLinkCodesTable.used, false)
-      )
+    await db.update(usersTable).set({ telegram_chat_id: String(chatId) }).where(eq(usersTable.id, uid));
+
+    await safeSend(
+      chatId,
+      `🎉 You're all connected ${user.name}!\nI'll send you friendly reminders to track your finances 💰\n\nHere's what I can do:\n💰 /add income [amount] [currency] [note]\n💸 /add expense [amount] [currency] [note]\n📊 /summary — today's numbers\n📅 /week — this week\n⚙️ /reminders — change schedule\n\nTry /summary to see today's numbers!`
     );
-
-  if (!linkRow || linkRow.expires_at < now) {
-    await safeSend(chatId, "❌ That code is invalid or expired. Go to Settings → Connect Telegram to get a new one.");
-    return;
+  } else {
+    await safeSend(
+      chatId,
+      `Hey! 👋 I'm your Smart i-n-E Tracker money buddy 💰\n\nTo connect your account, open the app:\nSettings → Activate Telegram Notifications 🔗\n\nThat's it — no codes needed!`
+    );
   }
-
-  await db.update(usersTable).set({ telegram_chat_id: String(chatId) }).where(eq(usersTable.id, linkRow.user_id));
-  await db.update(telegramLinkCodesTable).set({ used: true }).where(eq(telegramLinkCodesTable.code, linkRow.code));
-
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, linkRow.user_id));
-
-  await safeSend(
-    chatId,
-    `🎉 You're all set ${user.name}!\nI'll check in with you daily 💪\n\nHere's what I can do:\n💰 /add income [amount] [currency] [note]\n💸 /add expense [amount] [currency] [note]\n📊 /summary — today's numbers\n📅 /week — this week\n⚙️ /reminders — change schedule\n\nJust send me a number and I'll guide you!`
-  );
 }
 
 async function handleAdd(chatId: number, args: string[]) {
@@ -592,8 +575,7 @@ export function startTelegramBot() {
 
     try {
       if (text === "/start") { await handleStart(chatId); return; }
-      if (text.startsWith("/link ")) { await handleLink(chatId, text.replace("/link ", "").trim()); return; }
-      if (text.startsWith("/link")) { await handleLink(chatId, text.replace("/link", "").trim()); return; }
+      if (text.startsWith("/start ")) { await handleStart(chatId, text.replace("/start ", "").trim()); return; }
       if (text.startsWith("/add ")) { await handleAdd(chatId, text.replace("/add ", "").trim().split(/\s+/)); return; }
       if (text === "/summary") { await handleSummary(chatId); return; }
       if (text === "/week") { await handleWeek(chatId); return; }
