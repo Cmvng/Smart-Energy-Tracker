@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Api
-  version: 0.1.0
+  version: 0.2.0
   description: Smart i-n-E Tracker API
 servers:
   - url: /api
@@ -11,13 +11,16 @@ tags:
     description: Health operations
   - name: auth
     description: Authentication operations
+  - name: currencies
+    description: Currency operations
+  - name: transactions
+    description: Transaction operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -39,7 +42,7 @@ paths:
               $ref: "#/components/schemas/RegisterRequest"
       responses:
         "201":
-          description: User registered successfully
+          description: User registered
           content:
             application/json:
               schema:
@@ -51,7 +54,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Email already exists
+          description: Email exists
           content:
             application/json:
               schema:
@@ -91,13 +94,161 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Current user info
+          description: Current user
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserResponse"
         "401":
           description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /currencies:
+    get:
+      operationId: getCurrencies
+      tags: [currencies]
+      summary: Get all currencies with rates
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of currencies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Currency"
+
+  /currencies/refresh:
+    post:
+      operationId: refreshCurrencyRates
+      tags: [currencies]
+      summary: Fetch live exchange rates and update DB
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Rates updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrencyRefreshResponse"
+        "503":
+          description: Exchange rates API unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /transactions:
+    post:
+      operationId: createTransaction
+      tags: [transactions]
+      summary: Create a transaction
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransactionRequest"
+      responses:
+        "201":
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: listTransactions
+      tags: [transactions]
+      summary: List transactions for the user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: timeframe
+          in: query
+          schema:
+            type: string
+            enum: [day, week, month, year]
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [income, expense]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Paginated transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionListResponse"
+
+  /transactions/summary:
+    get:
+      operationId: getTransactionSummary
+      tags: [transactions]
+      summary: Get aggregated transaction summary
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: timeframe
+          in: query
+          schema:
+            type: string
+            enum: [day, week, month, year]
+            default: day
+      responses:
+        "200":
+          description: Summary data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionSummary"
+
+  /transactions/{id}:
+    delete:
+      operationId: deleteTransaction
+      tags: [transactions]
+      summary: Soft delete a transaction
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+        "404":
+          description: Not found
           content:
             application/json:
               schema:
@@ -116,8 +267,7 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
     RegisterRequest:
       type: object
@@ -136,11 +286,7 @@ components:
         home_currency:
           type: string
           default: USD
-      required:
-        - name
-        - email
-        - password
-        - mode
+      required: [name, email, password, mode]
 
     LoginRequest:
       type: object
@@ -150,9 +296,7 @@ components:
           format: email
         password:
           type: string
-      required:
-        - email
-        - password
+      required: [email, password]
 
     AuthResponse:
       type: object
@@ -161,9 +305,7 @@ components:
           type: string
         user:
           $ref: "#/components/schemas/UserResponse"
-      required:
-        - token
-        - user
+      required: [token, user]
 
     UserResponse:
       type: object
@@ -180,13 +322,118 @@ components:
           type: string
         created_at:
           type: string
-      required:
-        - id
-        - name
-        - email
-        - mode
-        - home_currency
-        - created_at
+      required: [id, name, email, mode, home_currency, created_at]
+
+    Currency:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        rate_to_usd:
+          type: string
+        rate_updated_at:
+          type: string
+      required: [code, name, rate_to_usd, rate_updated_at]
+
+    CurrencyRefreshResponse:
+      type: object
+      properties:
+        updated_count:
+          type: integer
+        message:
+          type: string
+      required: [updated_count, message]
+
+    CreateTransactionRequest:
+      type: object
+      properties:
+        account_id:
+          type: string
+        type:
+          type: string
+          enum: [income, expense]
+        amount_original:
+          type: number
+        currency_code:
+          type: string
+        notes:
+          type: string
+        transacted_at:
+          type: string
+      required: [account_id, type, amount_original, currency_code]
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+        account_id:
+          type: string
+        type:
+          type: string
+        amount_original:
+          type: string
+        currency_code:
+          type: string
+        amount_usd:
+          type: string
+        fx_rate_used:
+          type: string
+        notes:
+          type: string
+        transacted_at:
+          type: string
+        created_at:
+          type: string
+      required: [id, account_id, type, amount_original, currency_code, transacted_at, created_at]
+
+    TransactionListResponse:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required: [transactions, total, limit, offset]
+
+    TransactionSummary:
+      type: object
+      properties:
+        total_income_usd:
+          type: number
+        total_expense_usd:
+          type: number
+        net_usd:
+          type: number
+        transaction_count:
+          type: integer
+        income_rate_per_hour:
+          type: number
+        expense_rate_per_hour:
+          type: number
+        profit_status:
+          type: string
+          enum: [profit, breakeven, loss]
+        timeframe:
+          type: string
+      required: [total_income_usd, total_expense_usd, net_usd, transaction_count, income_rate_per_hour, expense_rate_per_hour, profit_status, timeframe]
+
+    DeleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success, message]
 
     ErrorResponse:
       type: object
@@ -195,5 +442,4 @@ components:
           type: string
         message:
           type: string
-      required:
-        - error
+      required: [error]

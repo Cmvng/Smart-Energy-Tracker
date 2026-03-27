@@ -5,9 +5,8 @@
  * Smart i-n-E Tracker API
  * OpenAPI spec version: 0.2.0
  */
-import type { UserResponse } from "./userResponse";
 
-export interface AuthResponse {
-  token: string;
-  user: UserResponse;
+export interface CurrencyRefreshResponse {
+  updated_count: number;
+  message: string;
 }

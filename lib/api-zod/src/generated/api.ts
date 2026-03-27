@@ -3,12 +3,11 @@
  * Do not edit manually.
  * Api
  * Smart i-n-E Tracker API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import * as zod from "zod";
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -60,4 +59,102 @@ export const GetCurrentUserResponse = zod.object({
   mode: zod.string(),
   home_currency: zod.string(),
   created_at: zod.string(),
+});
+
+/**
+ * @summary Get all currencies with rates
+ */
+export const GetCurrenciesResponseItem = zod.object({
+  code: zod.string(),
+  name: zod.string(),
+  rate_to_usd: zod.string(),
+  rate_updated_at: zod.string(),
+});
+export const GetCurrenciesResponse = zod.array(GetCurrenciesResponseItem);
+
+/**
+ * @summary Fetch live exchange rates and update DB
+ */
+export const RefreshCurrencyRatesResponse = zod.object({
+  updated_count: zod.number(),
+  message: zod.string(),
+});
+
+/**
+ * @summary Create a transaction
+ */
+export const CreateTransactionBody = zod.object({
+  account_id: zod.string(),
+  type: zod.enum(["income", "expense"]),
+  amount_original: zod.number(),
+  currency_code: zod.string(),
+  notes: zod.string().optional(),
+  transacted_at: zod.string().optional(),
+});
+
+/**
+ * @summary List transactions for the user
+ */
+export const listTransactionsQueryLimitDefault = 50;
+export const listTransactionsQueryOffsetDefault = 0;
+
+export const ListTransactionsQueryParams = zod.object({
+  timeframe: zod.enum(["day", "week", "month", "year"]).optional(),
+  type: zod.enum(["income", "expense"]).optional(),
+  limit: zod.coerce.number().default(listTransactionsQueryLimitDefault),
+  offset: zod.coerce.number().default(listTransactionsQueryOffsetDefault),
+});
+
+export const ListTransactionsResponse = zod.object({
+  transactions: zod.array(
+    zod.object({
+      id: zod.string(),
+      account_id: zod.string(),
+      type: zod.string(),
+      amount_original: zod.string(),
+      currency_code: zod.string(),
+      amount_usd: zod.string().optional(),
+      fx_rate_used: zod.string().optional(),
+      notes: zod.string().optional(),
+      transacted_at: zod.string(),
+      created_at: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+  limit: zod.number(),
+  offset: zod.number(),
+});
+
+/**
+ * @summary Get aggregated transaction summary
+ */
+export const getTransactionSummaryQueryTimeframeDefault = `day`;
+
+export const GetTransactionSummaryQueryParams = zod.object({
+  timeframe: zod
+    .enum(["day", "week", "month", "year"])
+    .default(getTransactionSummaryQueryTimeframeDefault),
+});
+
+export const GetTransactionSummaryResponse = zod.object({
+  total_income_usd: zod.number(),
+  total_expense_usd: zod.number(),
+  net_usd: zod.number(),
+  transaction_count: zod.number(),
+  income_rate_per_hour: zod.number(),
+  expense_rate_per_hour: zod.number(),
+  profit_status: zod.enum(["profit", "breakeven", "loss"]),
+  timeframe: zod.string(),
+});
+
+/**
+ * @summary Soft delete a transaction
+ */
+export const DeleteTransactionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const DeleteTransactionResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
 });

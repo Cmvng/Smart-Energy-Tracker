@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import Dashboard from "@/pages/dashboard";
+import AddTransaction from "@/pages/add";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,9 @@ function Router() {
       <Route path="/dashboard">
         <ProtectedRoute component={Dashboard} />
       </Route>
+      <Route path="/add">
+        <ProtectedRoute component={AddTransaction} />
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -61,7 +65,7 @@ function Router() {
 
 function MobileContainer({ children }: { children: React.ReactNode }) {
   return (
-    <div className="w-full max-w-[430px] mx-auto min-h-screen bg-background shadow-[0_0_50px_-12px_rgba(0,0,0,0.15)] relative overflow-hidden flex flex-col">
+    <div className="w-full max-w-[430px] mx-auto min-h-screen bg-background shadow-[0_0_50px_-12px_rgba(0,0,0,0.15)] relative overflow-x-hidden overflow-y-auto flex flex-col">
       {children}
     </div>
   );

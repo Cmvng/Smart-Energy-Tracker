@@ -52,6 +52,9 @@ export default function Register() {
     try {
       const response = await registerMutation.mutateAsync({ data });
       setToken(response.token);
+      if ((response.user as any)?.account_id) {
+        localStorage.setItem("account_id", (response.user as any).account_id);
+      }
       toast({
         title: "Account Created!",
         description: "Welcome to Smart i-n-E Tracker.",

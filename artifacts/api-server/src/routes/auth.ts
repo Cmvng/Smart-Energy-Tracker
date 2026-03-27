@@ -37,11 +37,11 @@ router.post("/register", async (req: Request, res: Response) => {
       home_currency: home_currency || "USD",
     }).returning();
 
-    await db.insert(accountsTable).values({
+    const [account] = await db.insert(accountsTable).values({
       user_id: user.id,
       type: mode,
       label: mode === "business" ? "Business Account" : "Personal Account",
-    });
+    }).returning();
 
     const token = createToken(user.id);
     res.status(201).json({
@@ -53,6 +53,7 @@ router.post("/register", async (req: Request, res: Response) => {
         mode: user.mode,
         home_currency: user.home_currency,
         created_at: user.created_at,
+        account_id: account.id,
       },
     });
   } catch (err) {
@@ -82,6 +83,7 @@ router.post("/login", async (req: Request, res: Response) => {
       return;
     }
 
+    const [account] = await db.select().from(accountsTable).where(eq(accountsTable.user_id, user.id));
     const token = createToken(user.id);
     res.json({
       token,
@@ -92,6 +94,7 @@ router.post("/login", async (req: Request, res: Response) => {
         mode: user.mode,
         home_currency: user.home_currency,
         created_at: user.created_at,
+        account_id: account?.id,
       },
     });
   } catch (err) {

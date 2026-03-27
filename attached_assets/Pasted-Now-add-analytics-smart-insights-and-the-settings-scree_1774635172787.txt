@@ -1,0 +1,37 @@
+Now add analytics, smart insights, and the settings screen to the Smart i-n-E Tracker.
+
+BACKEND — add these routes:
+
+1. GET /api/analytics/chart — return daily net P&L for the last 30 days as an array: [{ date, income_usd, expense_usd, net_usd }]. Group transactions by day.
+2. GET /api/analytics/insights — generate 3 plain-English insights based on the last 30 days of data:
+   - Spending rate: "You spend an average of $X per day"
+   - Best day: "Your most profitable day was [weekday] with $X net"
+   - Trend: compare this week vs last week net, return "You're up $X vs last week" or "You're down $X vs last week"
+   - Loss streak: if net < 0 for 3+ consecutive days, add "You've been at a loss for X days. Consider reviewing your expenses."
+   Return as: [{ type, message, icon }] where icon is one of: 'trend-up', 'trend-down', 'calendar', 'alert'
+3. GET /api/export/csv — generate and return a CSV file of all the user's transactions (Content-Type: text/csv)
+
+FRONTEND — build these screens:
+
+1. /analytics — Analytics screen:
+   - 30-day bar chart showing income vs expenses per day — use the recharts library (npm install recharts)
+   - Chart colors: income bars green (#00D37F), expense bars coral (#FF4757)
+   - Below chart: 3 insight cards, each with an icon, the plain-English message, and a subtle colored background (green for positive, amber for neutral, red for alerts)
+   - Timeframe selector at top: 7 days | 30 days | 3 months
+
+2. /settings — Settings screen:
+   - User info section: name, email (read only)
+   - Home currency selector: dropdown, saves to user profile via PATCH /api/user
+   - Mode section: Individual / Business toggle
+   - Notifications section: reminder frequency selector (Daily / Every 3 days / Weekly / Off) — save preference to DB (add notification_frequency column to users table)
+   - Export section: "Download CSV" button that triggers GET /api/export/csv
+   - "Refresh exchange rates" button that calls POST /api/currencies/refresh
+   - Logout button
+
+3. Bottom navigation bar (persistent across all screens):
+   - 4 tabs: Home (house icon), Add (+ circle), Analytics (chart icon), Settings (gear icon)
+   - Active tab highlighted in navy (#0A1628)
+   - "Add" tab opens the /add screen
+   - Use simple Unicode or SVG icons — do NOT use any icon library that requires additional install
+
+Make the whole app feel like a real fintech product: smooth transitions between screens, consistent card styling, no raw HTML ugliness. Every number showing money must be formatted with 2 decimal places and thousand separators.

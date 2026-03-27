@@ -15,6 +15,7 @@ export const transactionsTable = pgTable("transactions", {
   transacted_at: timestamp("transacted_at").notNull().defaultNow(),
   synced: boolean("synced").notNull().default(true),
   created_at: timestamp("created_at").notNull().defaultNow(),
+  deleted_at: timestamp("deleted_at"),
 });
 
 export const insertTransactionSchema = createInsertSchema(transactionsTable).omit({ id: true, created_at: true });

@@ -39,6 +39,9 @@ export default function Login() {
     try {
       const response = await loginMutation.mutateAsync({ data });
       setToken(response.token);
+      if ((response.user as any)?.account_id) {
+        localStorage.setItem("account_id", (response.user as any).account_id);
+      }
       toast({
         title: "Welcome back!",
         description: "You have successfully logged in.",

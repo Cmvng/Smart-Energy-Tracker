@@ -1,13 +1,11 @@
 packages:
-  "framer-motion": "For fluid page transitions and touch-friendly interactive animations"
-  "react-hook-form": "For robust form state management"
-  "@hookform/resolvers": "For connecting Zod validation schemas to forms"
-  "clsx": "For conditional class merging"
-  "tailwind-merge": "For safely merging Tailwind utility classes without conflicts"
-
-images: []
-
+  "date-fns": "For formatting relative dates (e.g. 2h ago)"
+  "framer-motion": "For page transitions and interactive animations"
+  "clsx": "For conditional class names"
+  "tailwind-merge": "For merging tailwind classes safely"
+images:
+  - path: "artifacts/smart-ine-tracker/public/images/empty-transactions.png"
+    description: "Clean minimal 3D or vector illustration of a friendly floating wallet or coin indicating an empty state. Fintech app style. Soft pastel background matching #F5F6FA with subtle bright green (#00D37F) and coral red (#FF4757) accents."
+    aspect_ratio: "1:1"
 notes:
-  - "JWT token is stored in localStorage under the key 'token'"
-  - "The app uses a strict 430px max-width container to enforce mobile-first dimensions on desktop screens"
-  - "Auth headers are injected into the generated Orval hooks via the request options"
+  - App is wrapped in a 430px container for mobile-first layout

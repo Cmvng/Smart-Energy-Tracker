@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * Smart i-n-E Tracker API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 export interface HealthStatus {
   status: string;
@@ -45,7 +45,120 @@ export interface AuthResponse {
   user: UserResponse;
 }
 
+export interface Currency {
+  code: string;
+  name: string;
+  rate_to_usd: string;
+  rate_updated_at: string;
+}
+
+export interface CurrencyRefreshResponse {
+  updated_count: number;
+  message: string;
+}
+
+export type CreateTransactionRequestType =
+  (typeof CreateTransactionRequestType)[keyof typeof CreateTransactionRequestType];
+
+export const CreateTransactionRequestType = {
+  income: "income",
+  expense: "expense",
+} as const;
+
+export interface CreateTransactionRequest {
+  account_id: string;
+  type: CreateTransactionRequestType;
+  amount_original: number;
+  currency_code: string;
+  notes?: string;
+  transacted_at?: string;
+}
+
+export interface Transaction {
+  id: string;
+  account_id: string;
+  type: string;
+  amount_original: string;
+  currency_code: string;
+  amount_usd?: string;
+  fx_rate_used?: string;
+  notes?: string;
+  transacted_at: string;
+  created_at: string;
+}
+
+export interface TransactionListResponse {
+  transactions: Transaction[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export type TransactionSummaryProfitStatus =
+  (typeof TransactionSummaryProfitStatus)[keyof typeof TransactionSummaryProfitStatus];
+
+export const TransactionSummaryProfitStatus = {
+  profit: "profit",
+  breakeven: "breakeven",
+  loss: "loss",
+} as const;
+
+export interface TransactionSummary {
+  total_income_usd: number;
+  total_expense_usd: number;
+  net_usd: number;
+  transaction_count: number;
+  income_rate_per_hour: number;
+  expense_rate_per_hour: number;
+  profit_status: TransactionSummaryProfitStatus;
+  timeframe: string;
+}
+
+export interface DeleteResponse {
+  success: boolean;
+  message: string;
+}
+
 export interface ErrorResponse {
   error: string;
   message?: string;
 }
+
+export type ListTransactionsParams = {
+  timeframe?: ListTransactionsTimeframe;
+  type?: ListTransactionsType;
+  limit?: number;
+  offset?: number;
+};
+
+export type ListTransactionsTimeframe =
+  (typeof ListTransactionsTimeframe)[keyof typeof ListTransactionsTimeframe];
+
+export const ListTransactionsTimeframe = {
+  day: "day",
+  week: "week",
+  month: "month",
+  year: "year",
+} as const;
+
+export type ListTransactionsType =
+  (typeof ListTransactionsType)[keyof typeof ListTransactionsType];
+
+export const ListTransactionsType = {
+  income: "income",
+  expense: "expense",
+} as const;
+
+export type GetTransactionSummaryParams = {
+  timeframe?: GetTransactionSummaryTimeframe;
+};
+
+export type GetTransactionSummaryTimeframe =
+  (typeof GetTransactionSummaryTimeframe)[keyof typeof GetTransactionSummaryTimeframe];
+
+export const GetTransactionSummaryTimeframe = {
+  day: "day",
+  week: "week",
+  month: "month",
+  year: "year",
+} as const;
