@@ -10,6 +10,7 @@ export const usersTable = pgTable("users", {
   mode: varchar("mode", { length: 20 }).notNull().default("individual"),
   home_currency: varchar("home_currency", { length: 10 }).notNull().default("USD"),
   notification_frequency: varchar("notification_frequency", { length: 20 }).notNull().default("daily"),
+  telegram_chat_id: text("telegram_chat_id"),
   created_at: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -7,6 +7,7 @@ import analyticsRouter from "./analytics";
 import userRouter from "./user";
 import exportRouter from "./exportRoutes";
 import notificationsRouter from "./notifications";
+import telegramRouter from "./telegram";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use("/analytics", analyticsRouter);
 router.use("/user", userRouter);
 router.use("/export", exportRouter);
 router.use("/notifications", notificationsRouter);
+router.use("/telegram", telegramRouter);
 
 export default router;

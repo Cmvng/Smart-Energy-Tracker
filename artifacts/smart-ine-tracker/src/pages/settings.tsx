@@ -42,6 +42,11 @@ export default function Settings() {
   const [refreshing, setRefreshing] = useState(false);
   const [testing, setTesting] = useState(false);
 
+  const [tgConnected, setTgConnected] = useState(false);
+  const [tgCode, setTgCode] = useState<string | null>(null);
+  const [tgLoading, setTgLoading] = useState(false);
+  const [tgDisconnecting, setTgDisconnecting] = useState(false);
+
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok });
     setTimeout(() => setToast({ msg: "", ok: true }), 3000);
@@ -52,6 +57,11 @@ export default function Settings() {
       fetch("/api/currencies", { headers: { Authorization: `Bearer ${token}` } })
         .then((r) => r.ok ? r.json() : [])
         .then(setCurrencies)
+        .catch(() => {});
+
+      fetch("/api/telegram/status", { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => r.ok ? r.json() : { connected: false })
+        .then((d) => setTgConnected(d.connected))
         .catch(() => {});
     }
   }, [token]);
@@ -126,6 +136,42 @@ export default function Settings() {
       showToast("❌ Connection error", false);
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleGetLinkCode = async () => {
+    setTgLoading(true);
+    setTgCode(null);
+    try {
+      const res = await fetch("/api/telegram/link-code", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setTgCode(data.code);
+      } else {
+        showToast("❌ Could not generate code", false);
+      }
+    } catch {
+      showToast("❌ Connection error", false);
+    } finally {
+      setTgLoading(false);
+    }
+  };
+
+  const handleDisconnectTelegram = async () => {
+    setTgDisconnecting(true);
+    try {
+      const res = await fetch("/api/telegram/disconnect", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        setTgConnected(false);
+        setTgCode(null);
+        showToast("✅ Telegram disconnected");
+      } else {
+        showToast("❌ Could not disconnect", false);
+      }
+    } catch {
+      showToast("❌ Connection error", false);
+    } finally {
+      setTgDisconnecting(false);
     }
   };
 
@@ -229,6 +275,63 @@ export default function Settings() {
             <span className="text-sm font-medium text-gray-700">Send Test Reminder</span>
             <span className="ml-auto text-gray-400">›</span>
           </button>
+        </Section>
+
+        <Section title="Telegram Bot">
+          {tgConnected ? (
+            <div className="px-4 py-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xl">✅</span>
+                <span className="text-sm font-semibold text-gray-800">Telegram connected 🎉</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">You'll receive daily reminders and can log transactions directly in Telegram.</p>
+              <button
+                onClick={handleDisconnectTelegram}
+                disabled={tgDisconnecting}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold border transition-colors disabled:opacity-60"
+                style={{ borderColor: RED, color: RED }}
+              >
+                {tgDisconnecting ? "Disconnecting…" : "Disconnect"}
+              </button>
+            </div>
+          ) : (
+            <div className="px-4 py-4">
+              <p className="text-xs text-gray-500 mb-3">Connect Telegram to log transactions and get daily reminders from your money buddy 💰</p>
+              {tgCode ? (
+                <div className="mb-3">
+                  <div
+                    className="text-4xl font-black tracking-[0.25em] text-center py-4 rounded-2xl mb-3"
+                    style={{ background: `${NAVY}10`, color: NAVY, fontVariantNumeric: "tabular-nums" }}
+                  >
+                    {tgCode}
+                  </div>
+                  <div className="text-xs text-gray-500 space-y-1 mb-3">
+                    <p className="font-medium text-gray-700">To link your account:</p>
+                    <p>1. Open Telegram</p>
+                    <p>2. Search <span className="font-mono font-semibold text-gray-800">@SmartIneTrackerBot</span></p>
+                    <p>3. Send: <span className="font-mono font-semibold text-gray-800">/link {tgCode}</span></p>
+                    <p className="text-gray-400 mt-1">Code expires in 10 minutes</p>
+                  </div>
+                  <button
+                    onClick={handleGetLinkCode}
+                    disabled={tgLoading}
+                    className="w-full py-2 rounded-xl text-xs font-semibold border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                  >
+                    Get new code
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleGetLinkCode}
+                  disabled={tgLoading}
+                  className="w-full py-3 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-60"
+                  style={{ background: NAVY }}
+                >
+                  {tgLoading ? "Generating…" : "🔗 Get Link Code"}
+                </button>
+              )}
+            </div>
+          )}
         </Section>
 
         <Section title="Account">
