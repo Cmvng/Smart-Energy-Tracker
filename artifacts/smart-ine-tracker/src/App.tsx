@@ -47,9 +47,8 @@ function PublicRoute({ component: Component }: { component: React.ComponentType 
 function RootRoute() {
   const { token, isLoading } = useAuth();
   if (isLoading) return <Spinner />;
-  if (token) return <Redirect to="/dashboard" />;
-  if (hasVisited()) return <Redirect to="/login" />;
-  return <Landing />;
+  if (token) return <Redirect to="/dashboard" replace />;
+  return <Redirect to="/welcome" replace />;
 }
 
 const CHROME_PATHS = ["/dashboard", "/analytics", "/settings", "/history"];
@@ -88,6 +87,9 @@ function AppRouter() {
     <AppShell>
       <Switch>
         <Route path="/" component={RootRoute} />
+        <Route path="/welcome">
+          <PublicRoute component={Landing} />
+        </Route>
         <Route path="/login">
           <PublicRoute component={Login} />
         </Route>

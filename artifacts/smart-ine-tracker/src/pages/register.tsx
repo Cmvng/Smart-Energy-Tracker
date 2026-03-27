@@ -51,10 +51,10 @@ export default function Register() {
         setError(data.message || "Could not create account. Please try again.");
         return;
       }
+      markVisited();
       setToken(data.token);
       setUser(data.user);
-      markVisited();
-      setLocation("/dashboard");
+      setLocation("/dashboard", { replace: true });
     } catch {
       setError("Connection error. Please try again.");
     } finally {
@@ -69,7 +69,7 @@ export default function Register() {
         <div className="flex items-center justify-between mb-8">
           <button
             type="button"
-            onClick={() => window.history.back()}
+            onClick={() => setLocation("/welcome")}
             className="flex items-center gap-1.5 text-white/80 hover:text-white transition-colors"
             style={{ fontSize: 14, padding: 8 }}
           >

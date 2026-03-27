@@ -29,7 +29,7 @@ export default function Login() {
       markVisited();
       setToken(data.token);
       setUser(data.user);
-      setLocation("/dashboard");
+      setLocation("/dashboard", { replace: true });
     } catch {
       setError("Connection error. Please try again.");
     } finally {
@@ -45,7 +45,7 @@ export default function Login() {
         <div className="flex items-center justify-between mb-8">
           <button
             type="button"
-            onClick={() => window.history.back()}
+            onClick={() => setLocation("/welcome")}
             className="flex items-center gap-1.5 text-white/80 hover:text-white transition-colors"
             style={{ fontSize: 14, padding: 8 }}
           >

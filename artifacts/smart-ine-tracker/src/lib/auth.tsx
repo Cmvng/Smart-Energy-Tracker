@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("ine_landing_v4");
     setTokenState(null);
     setUserState(null);
-    setLocation("/");
+    setLocation("/welcome", { replace: true });
   }, [setLocation]);
 
   useEffect(() => {

@@ -1,0 +1,97 @@
+The back button on login page exists but does not 
+go back to the landing page. Fix this completely.
+
+ROOT CAUSE:
+The landing page is probably using 
+<Navigate to="/login" replace /> or the routing 
+is redirecting before the landing page renders.
+The landing page route is being skipped entirely.
+
+COMPLETE FIX:
+
+1. First check what the '/' route currently does.
+   It is likely auto-redirecting to /login before 
+   the landing page component even mounts.
+   Remove any automatic redirect on '/'.
+
+2. Create a completely separate route for landing:
+   Add route: <Route path="/welcome" element={<LandingPage />} />
+   
+   Change RootRedirect to:
+   function RootRedirect() {
+     const token = localStorage.getItem('ine_token')
+     if (token) return <Navigate to="/dashboard" replace />
+     return <Navigate to="/welcome" replace />
+   }
+   
+   This means:
+   '/' always goes to '/welcome' (landing page)
+   unless user is already logged in
+
+3. Landing page at '/welcome':
+   Both buttons navigate WITHOUT replace:
+   "Get Started" → navigate('/register')
+   "Sign In" → navigate('/login')
+   
+   Do NOT use replace:true here.
+   Do NOT set any localStorage flag here.
+   Just navigate normally so browser history works.
+
+4. Back button on login page:
+   Change onClick from navigate(-1) to:
+   onClick={() => navigate('/welcome')}
+   
+   Same on register page back button:
+   onClick={() => navigate('/welcome')}
+   
+   This guarantees it always goes to landing page
+   regardless of browser history state.
+
+5. Back button on register page:
+   Also add the same ← Back button to register page
+   if it is missing. Same style as login page.
+   onClick={() => navigate('/welcome')}
+
+6. After successful login:
+   navigate('/dashboard', { replace: true })
+   localStorage.setItem('ine_landing_v4', 'true')
+
+7. After successful register:
+   navigate('/dashboard', { replace: true })
+   localStorage.setItem('ine_landing_v4', 'true')
+
+8. Update RootRedirect final logic:
+   function RootRedirect() {
+     const token = localStorage.getItem('ine_token')
+     const seen = localStorage.getItem('ine_landing_v4')
+     if (token) return <Navigate to="/dashboard" replace />
+     if (seen) return <Navigate to="/welcome" replace />
+     return <Navigate to="/welcome" replace />
+   }
+   
+   Basically '/' ALWAYS goes to '/welcome'
+   unless user has a valid token.
+
+9. Logout in settings:
+   localStorage.removeItem('ine_token')
+   localStorage.removeItem('ine_user')
+   localStorage.removeItem('ine_landing_v4')
+   navigate('/welcome', { replace: true })
+
+10. Make sure '/welcome' route is defined BEFORE
+    '/login' and '/register' in the routes list.
+
+TEST after fixing:
+- Visit app URL → sees landing page at /welcome ✓
+- Click Sign In → goes to /login ✓
+- Click ← Back → goes back to /welcome ✓
+- Click Get Started → goes to /register ✓
+- Click ← Back → goes back to /welcome ✓
+- Log in → goes to /dashboard ✓
+- Press browser back → stays on /dashboard ✓
+- Log out → goes to /welcome ✓
+
+After fixing rebuild:
+cd client && npm run build
+Restart server.
+Confirm all 8 test steps pass.
