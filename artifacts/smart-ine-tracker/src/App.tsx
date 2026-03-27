@@ -13,13 +13,21 @@ import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 import BottomNav from "@/components/BottomNav";
+import Sidebar from "@/components/Sidebar";
+import Landing, { hasVisited } from "@/pages/landing";
 import Onboarding, { isOnboardingDone } from "@/pages/onboarding";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
-const PUBLIC_PATHS = ["/login", "/register"];
+function Spinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F5F6FA]">
+      <div className="w-8 h-8 border-4 border-[#00D37F] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { token, isLoading } = useAuth();
@@ -35,19 +43,38 @@ function PublicRoute({ component: Component }: { component: React.ComponentType 
   return <Component />;
 }
 
-function Spinner() {
+function RootRoute() {
+  const { token, isLoading } = useAuth();
+  if (isLoading) return <Spinner />;
+  if (token) return <Redirect to="/dashboard" />;
+  if (hasVisited()) return <Redirect to="/login" />;
+  return <Landing />;
+}
+
+const CHROME_PATHS = ["/dashboard", "/analytics", "/settings"];
+
+function AppShell({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  const { token } = useAuth();
+  const showChrome = !!token && CHROME_PATHS.some((p) => location.startsWith(p));
+
+  if (!showChrome) {
+    return <>{children}</>;
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F5F6FA]">
-      <div className="w-8 h-8 border-4 border-[#00D37F] border-t-transparent rounded-full animate-spin" />
+    <div className="flex min-h-screen w-full">
+      <Sidebar />
+      <main className="flex-1 min-w-0 flex flex-col">
+        {children}
+      </main>
+      <BottomNav />
     </div>
   );
 }
 
 function AppRouter() {
-  const [location] = useLocation();
   const { token } = useAuth();
-  const showNav = !!token && !PUBLIC_PATHS.includes(location);
-
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return !!token && !isOnboardingDone();
   });
@@ -57,11 +84,9 @@ function AppRouter() {
   }
 
   return (
-    <>
+    <AppShell>
       <Switch>
-        <Route path="/">
-          <Redirect to="/dashboard" />
-        </Route>
+        <Route path="/" component={RootRoute} />
         <Route path="/login">
           <PublicRoute component={Login} />
         </Route>
@@ -79,8 +104,7 @@ function AppRouter() {
         </Route>
         <Route component={NotFound} />
       </Switch>
-      {showNav && <BottomNav />}
-    </>
+    </AppShell>
   );
 }
 
@@ -91,9 +115,7 @@ function App() {
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <AuthProvider>
             <AddSheetProvider>
-              <div className="w-full max-w-[430px] mx-auto min-h-screen bg-[#F5F6FA] shadow-xl relative overflow-x-hidden flex flex-col md:max-w-none">
-                <AppRouter />
-              </div>
+              <AppRouter />
             </AddSheetProvider>
           </AuthProvider>
         </WouterRouter>

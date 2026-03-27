@@ -1,0 +1,26 @@
+Fix these three things:
+
+1. DESKTOP RESPONSIVE LAYOUT — the app currently looks like a narrow mobile strip on desktop. Fix it properly:
+   - On screens wider than 768px, the app must expand to fill the full width
+   - Add a left sidebar (240px wide, navy #0A1628 background) containing: app logo + name at top, navigation links in the middle (Dashboard, Analytics, Settings), user avatar + name at the bottom
+   - Main content area fills the remaining width, max-width 1100px total, centered on very wide screens
+   - Cards on the dashboard should display in a 3-column grid on desktop instead of stacking
+   - The bottom navigation bar must be completely hidden on desktop (replaced by the sidebar)
+   - The Quick Add sheet becomes a centered modal dialog on desktop (not a bottom sheet)
+   - Transaction list on desktop: show in a proper table layout with columns: Date | Type | Description | Amount | Currency | USD Value
+   - Analytics charts should be wider and taller on desktop (height 400px instead of 250px)
+
+2. LANDING/WELCOME PAGE — add a beautiful landing page that shows BEFORE the login page for first-time visitors (check localStorage key 'ine_visited' — if not set, show landing page first):
+   - Full screen, navy #0A1628 background
+   - Large app logo/icon centered at top
+   - App name "Smart i-n-E Tracker" in large white bold text
+   - Tagline: "Track your income and expenses in seconds. Know your profit at a glance."
+   - 3 feature highlights in a row (icons + short text):
+     * ⚡ "Log in under 5 seconds"
+     * 🌍 "Multi-currency with auto USD conversion"
+     * 📊 "Smart insights that actually make sense"
+   - Two buttons: "Get Started" (green, goes to /register) and "Sign In" (white outline, goes to /login)
+   - On any button click: set localStorage 'ine_visited' = true
+   - This page must look stunning on BOTH mobile and desktop
+
+3. QUICK ADD SHEET FIX — the Income/Saved button on the left is getting cut off on mobile (the left edge is hidden). Fix the toggle buttons so both Income and Expense buttons are fully visible and equal width within the sheet, with proper padding on both sides. Also make sure the sheet has a drag handle (small grey pill) at the very top center.
