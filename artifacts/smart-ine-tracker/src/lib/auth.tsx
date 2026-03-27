@@ -12,7 +12,13 @@ export interface UserProfile {
   home_currency: string;
   notification_frequency?: string;
   avatar_url?: string;
+  nickname?: string;
   created_at?: string;
+}
+
+export function displayName(user: UserProfile | null | undefined): string {
+  if (!user) return "";
+  return user.nickname ? "@" + user.nickname : user.name;
 }
 
 interface AuthContextType {

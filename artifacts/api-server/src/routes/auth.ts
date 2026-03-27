@@ -9,7 +9,7 @@ import { Response, Request } from "express";
 const router: IRouter = Router();
 
 router.post("/register", async (req: Request, res: Response) => {
-  const { name, email, password, mode, home_currency } = req.body;
+  const { name, email, password, mode, home_currency, nickname } = req.body;
 
   if (!name || !email || !password || !mode) {
     res.status(400).json({ error: "validation_error", message: "name, email, password, and mode are required" });
@@ -28,6 +28,10 @@ router.post("/register", async (req: Request, res: Response) => {
       return;
     }
 
+    const cleanNickname = nickname
+      ? nickname.replace(/^@/, "").toLowerCase().replace(/\s+/g, "")
+      : null;
+
     const password_hash = await bcrypt.hash(password, 12);
     const [user] = await db.insert(usersTable).values({
       name,
@@ -35,6 +39,7 @@ router.post("/register", async (req: Request, res: Response) => {
       password_hash,
       mode,
       home_currency: home_currency || "USD",
+      nickname: cleanNickname || undefined,
     }).returning();
 
     const [account] = await db.insert(accountsTable).values({
@@ -52,6 +57,8 @@ router.post("/register", async (req: Request, res: Response) => {
         email: user.email,
         mode: user.mode,
         home_currency: user.home_currency,
+        nickname: user.nickname,
+        avatar_url: user.avatar_url,
         created_at: user.created_at,
         account_id: account.id,
       },
@@ -119,6 +126,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
       home_currency: user.home_currency,
       notification_frequency: user.notification_frequency,
       avatar_url: user.avatar_url,
+      nickname: user.nickname,
       created_at: user.created_at,
     });
   } catch (err) {

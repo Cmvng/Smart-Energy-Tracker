@@ -48,6 +48,9 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [refreshing, setRefreshing] = useState(false);
+  const [profileName, setProfileName] = useState(user?.name ?? "");
+  const [profileNickname, setProfileNickname] = useState(user?.nickname ? "@" + user.nickname : "");
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const [tgConnected, setTgConnected] = useState(false);
   const [tgDisconnecting, setTgDisconnecting] = useState(false);
@@ -77,6 +80,8 @@ export default function Settings() {
       setCurrency(user.home_currency ?? "USD");
       setMode((user.mode as any) ?? "individual");
       setNotifFreq(user.notification_frequency ?? "daily");
+      setProfileName(user.name ?? "");
+      setProfileNickname(user.nickname ? "@" + user.nickname : "");
     }
   }, [user]);
 
@@ -207,6 +212,31 @@ export default function Settings() {
     e.target.value = "";
   };
 
+  const handleSaveProfile = async () => {
+    setSavingProfile(true);
+    try {
+      const res = await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: profileName.trim() || undefined,
+          nickname: profileNickname.replace(/^@/, ""),
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setUser(updated);
+        showToast("✅ Profile updated!");
+      } else {
+        showToast("❌ Could not save", false);
+      }
+    } catch {
+      showToast("❌ Connection error", false);
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   const initials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : "U";
@@ -249,10 +279,21 @@ export default function Settings() {
             </div>
           </div>
 
-          <div style={{ textAlign: "center", marginBottom: 4 }}>
-            <div style={{ fontWeight: 600, fontSize: 18 }}>
-              @{user?.name?.toLowerCase().replace(/\s+/g, "")}
-            </div>
+          <div style={{ textAlign: "center", marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 20, color: NAVY }}>{user?.name}</div>
+            {user?.nickname ? (
+              <div style={{ color: GREEN, fontSize: 15, marginTop: 4 }}>@{user.nickname}</div>
+            ) : (
+              <div
+                style={{ color: "#9CA3AF", fontSize: 14, marginTop: 4, cursor: "pointer" }}
+                onClick={() => {
+                  const el = document.getElementById("nickname-input");
+                  el?.focus();
+                }}
+              >
+                Add a nickname →
+              </div>
+            )}
             <div style={{ color: "#888", fontSize: 13, marginTop: 4 }}>{user?.email}</div>
             <span
               className="inline-block mt-2 text-xs font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider"
@@ -260,6 +301,42 @@ export default function Settings() {
             >
               {user?.mode}
             </span>
+          </div>
+
+          {/* Editable fields */}
+          <div style={{ borderTop: "1px solid #F3F4F6", paddingTop: 16 }}>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>Display Name</label>
+              <input
+                type="text"
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                placeholder="Your name"
+                style={{ width: "100%", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 12, padding: "10px 14px", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>Nickname</label>
+              <input
+                id="nickname-input"
+                type="text"
+                value={profileNickname}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const stripped = v.replace(/^@+/, "");
+                  setProfileNickname(stripped ? "@" + stripped : "");
+                }}
+                placeholder="@moneyking"
+                style={{ width: "100%", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 12, padding: "10px 14px", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <button
+              onClick={handleSaveProfile}
+              disabled={savingProfile}
+              style={{ width: "100%", background: GREEN, color: "white", border: "none", borderRadius: 14, padding: "12px 0", fontWeight: 700, fontSize: 14, cursor: "pointer", opacity: savingProfile ? 0.6 : 1, minHeight: 44 }}
+            >
+              {savingProfile ? "Saving..." : "Save Changes"}
+            </button>
           </div>
 
           <input

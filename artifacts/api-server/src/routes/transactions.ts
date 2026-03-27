@@ -64,7 +64,19 @@ function buildInsightMessage(
 
 router.get("/summary", requireAuth, async (req: AuthRequest, res: Response) => {
   const timeframe = (req.query.timeframe as string) || "day";
-  const periodStart = getTimeframeStart(timeframe);
+  const fromParam = req.query.from as string | undefined;
+  const toParam = req.query.to as string | undefined;
+
+  const isCustomRange = !!(fromParam && toParam);
+  let periodStart: Date;
+  let periodEnd: Date | null = null;
+
+  if (isCustomRange) {
+    periodStart = new Date(fromParam + "T00:00:00.000Z");
+    periodEnd = new Date(toParam + "T23:59:59.999Z");
+  } else {
+    periodStart = getTimeframeStart(timeframe);
+  }
 
   try {
     const userAccounts = await db
@@ -86,14 +98,19 @@ router.get("/summary", requireAuth, async (req: AuthRequest, res: Response) => {
     const accountIds = userAccounts.map((a) => a.id);
     const idArr = sql`ARRAY[${sql.join(accountIds.map((id) => sql`${id}`), sql`, `)}]::text[]`;
 
+    const whereConditions = [
+      sql`${transactionsTable.account_id} = ANY(${idArr})`,
+      gte(transactionsTable.transacted_at, periodStart),
+      isNull(transactionsTable.deleted_at),
+    ];
+    if (periodEnd) {
+      whereConditions.push(sql`${transactionsTable.transacted_at} <= ${periodEnd}`);
+    }
+
     const rows = await db
       .select({ type: transactionsTable.type, total: sum(transactionsTable.amount_usd), cnt: count() })
       .from(transactionsTable)
-      .where(and(
-        sql`${transactionsTable.account_id} = ANY(${idArr})`,
-        gte(transactionsTable.transacted_at, periodStart),
-        isNull(transactionsTable.deleted_at)
-      ))
+      .where(and(...whereConditions))
       .groupBy(transactionsTable.type);
 
     let totalIncomeUsd = 0, totalExpenseUsd = 0, totalCount = 0;
@@ -111,6 +128,11 @@ router.get("/summary", requireAuth, async (req: AuthRequest, res: Response) => {
     const profitStatus = netUsd > 0.005 ? "profit" : netUsd < -0.005 ? "loss" : "breakeven";
     const insightMessage = buildInsightMessage(timeframe, totalIncomeUsd, totalExpenseUsd, netUsd, expenseRatePerHour, profitStatus);
 
+    const daysInRange = isCustomRange
+      ? Math.max(1, Math.ceil((periodEnd!.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)))
+      : null;
+    const dailyAvg = daysInRange ? Math.round((netUsd / daysInRange) * 100) / 100 : null;
+
     res.json({
       total_income_usd: Math.round(totalIncomeUsd * 100) / 100,
       total_expense_usd: Math.round(totalExpenseUsd * 100) / 100,
@@ -121,6 +143,12 @@ router.get("/summary", requireAuth, async (req: AuthRequest, res: Response) => {
       profit_status: profitStatus,
       insight_message: insightMessage,
       timeframe,
+      ...(isCustomRange && {
+        daily_avg: dailyAvg,
+        days_in_range: daysInRange,
+        from_date: fromParam,
+        to_date: toParam,
+      }),
     });
   } catch (err) {
     req.log.error({ err }, "Get summary error");

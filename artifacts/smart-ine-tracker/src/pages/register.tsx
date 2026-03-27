@@ -14,12 +14,18 @@ export default function Register() {
   const [, setLocation] = useLocation();
   const { setToken, setUser } = useAuth();
   const [name, setName] = useState("");
+  const [nickname, setNickname] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"individual" | "business">("individual");
   const [currency, setCurrency] = useState("USD");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const handleNicknameChange = (val: string) => {
+    const stripped = val.replace(/^@+/, "");
+    setNickname(stripped ? "@" + stripped : "");
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +36,14 @@ export default function Register() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, mode, home_currency: currency }),
+        body: JSON.stringify({
+          name,
+          nickname: nickname.replace(/^@/, "") || undefined,
+          email,
+          password,
+          mode,
+          home_currency: currency,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -95,6 +108,21 @@ export default function Register() {
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#0A1628] focus:ring-2 focus:ring-[#0A1628]/10 transition-all"
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Nickname <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={nickname}
+                onChange={(e) => handleNicknameChange(e.target.value)}
+                placeholder="@moneyking"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#0A1628] focus:ring-2 focus:ring-[#0A1628]/10 transition-all"
+              />
+              <p className="text-xs text-gray-400 mt-1">This is how you'll appear in the app</p>
+            </div>
+
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email Address</label>
               <input

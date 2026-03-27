@@ -12,6 +12,7 @@ export const usersTable = pgTable("users", {
   notification_frequency: varchar("notification_frequency", { length: 20 }).notNull().default("daily"),
   telegram_chat_id: text("telegram_chat_id"),
   avatar_url: text("avatar_url"),
+  nickname: text("nickname"),
   created_at: timestamp("created_at").notNull().defaultNow(),
 });
 

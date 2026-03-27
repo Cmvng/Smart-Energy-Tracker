@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { useAuth } from "@/lib/auth";
+import { useAuth, displayName } from "@/lib/auth";
+import ShareStatsModal from "@/components/ShareStatsModal";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line,
@@ -41,6 +42,7 @@ export default function Analytics() {
   const [insights, setInsights] = useState<any[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [showShare, setShowShare] = useState(false);
 
   const loadChart = useCallback(async () => {
     if (!token) return;
@@ -180,7 +182,7 @@ export default function Analytics() {
         )}
 
         {/* Insights */}
-        <div className="md:pb-8">
+        <div className="md:pb-4">
           <h2 className="text-base font-bold mb-3" style={{ color: NAVY }}>Smart Insights</h2>
           {insightsLoading ? (
             <div className="space-y-3">
@@ -206,7 +208,20 @@ export default function Analytics() {
             </div>
           )}
         </div>
+
+        {/* Share Stats Button */}
+        <div className="mb-8">
+          <button
+            onClick={() => setShowShare(true)}
+            className="w-full py-3 rounded-2xl text-sm font-bold border-2 transition-all active:scale-95"
+            style={{ borderColor: NAVY, color: NAVY, background: "white" }}
+          >
+            📤 Share My Stats
+          </button>
+        </div>
       </div>
+
+      {showShare && <ShareStatsModal onClose={() => setShowShare(false)} />}
     </div>
   );
 }

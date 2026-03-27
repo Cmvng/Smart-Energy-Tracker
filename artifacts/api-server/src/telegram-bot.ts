@@ -25,6 +25,10 @@ Open the app → Settings → Setup Telegram Reminders
 Then tap Start here and you're done 🔗
 App: ${APP_URL}`;
 
+function greetName(user: { name: string; nickname?: string | null }): string {
+  return user.nickname ? `@${user.nickname}` : user.name;
+}
+
 async function getUserByChatId(chatId: number) {
   const r = await pool.query("SELECT * FROM users WHERE telegram_chat_id = $1 LIMIT 1", [String(chatId)]);
   return r.rows[0] ?? null;
@@ -119,7 +123,7 @@ export function startTelegramBot() {
       }
       const user = result.rows[0];
       await safeSend(chatId,
-        `🎉 You're all set ${user.name}!\n\nI'll send you reminders to track your finances 💰\n\nHere's what I can do:\n📊 /summary — today's numbers\n📅 /week — this week's totals\n💰 /add income 5000 NGN freelance\n💸 /add expense 2000 NGN groceries\n\nOr just send me a number and I'll guide you!\nYour first reminder arrives tonight 🌙`
+        `🎉 You're all set ${greetName(user)}!\n\nI'll send you reminders to track your finances 💰\n\nHere's what I can do:\n📊 /summary — today's numbers\n📅 /week — this week's totals\n💰 /add income 5000 NGN freelance\n💸 /add expense 2000 NGN groceries\n\nOr just send me a number and I'll guide you!\nYour first reminder arrives tonight 🌙`
       );
     } catch (e) {
       logger.error({ e }, "/start [userId] error");
@@ -385,7 +389,7 @@ export function startTelegramBot() {
         const s = await getTodaySummary(account.id);
         await bot!.answerCallbackQuery(query.id, { text: "✅ Wrapping up!" });
         await safeSend(chatId,
-          `🎉 Great day ${user.name}!\n━━━━━━━━━━━━━━━\n💚 Income:   ${formatMoney(s.income)}\n❤️ Expenses: ${formatMoney(s.expenses)}\n${netEmoji(s.net)}: ${s.net >= 0 ? "+" : "-"}${formatMoney(s.net)}\n${s.count} transactions logged\n━━━━━━━━━━━━━━━\nRest well, money boss! 🌙💰`
+          `🎉 Great day ${greetName(user)}!\n━━━━━━━━━━━━━━━\n💚 Income:   ${formatMoney(s.income)}\n❤️ Expenses: ${formatMoney(s.expenses)}\n${netEmoji(s.net)}: ${s.net >= 0 ? "+" : "-"}${formatMoney(s.net)}\n${s.count} transactions logged\n━━━━━━━━━━━━━━━\nRest well, money boss! 🌙💰`
         );
         return;
       }
@@ -447,7 +451,7 @@ export function startTelegramCrons() {
           }
 
           await safeSend(user.telegram_chat_id,
-            `🌅 Good morning ${user.name}!${yesterdayLine ? "\n\n" + yesterdayLine : ""}\n\nNew day, new money moves 💪\nReady to track today? 👇`,
+            `🌅 Good morning ${greetName(user)}!${yesterdayLine ? "\n\n" + yesterdayLine : ""}\n\nNew day, new money moves 💪\nReady to track today? 👇`,
             {
               reply_markup: {
                 inline_keyboard: [
@@ -482,8 +486,8 @@ export function startTelegramCrons() {
           const s = await getTodaySummary(account.id);
 
           const msg = s.count > 0
-            ? `🌙 Evening check-in ${user.name}!\n\nToday so far:\n💚 Income: ${formatMoney(s.income)}\n❤️ Expenses: ${formatMoney(s.expenses)}\n${netEmoji(s.net)}: ${s.net >= 0 ? "+" : "-"}${formatMoney(s.net)}\n\nAnything else to add? 👇`
-            : `🌙 Hey ${user.name}! 👀\n\nYou haven't logged anything today yet...\nDon't let the day go undocumented!\n\nQuick log 👇`;
+            ? `🌙 Evening check-in ${greetName(user)}!\n\nToday so far:\n💚 Income: ${formatMoney(s.income)}\n❤️ Expenses: ${formatMoney(s.expenses)}\n${netEmoji(s.net)}: ${s.net >= 0 ? "+" : "-"}${formatMoney(s.net)}\n\nAnything else to add? 👇`
+            : `🌙 Hey ${greetName(user)}! 👀\n\nYou haven't logged anything today yet...\nDon't let the day go undocumented!\n\nQuick log 👇`;
 
           await safeSend(user.telegram_chat_id, msg, {
             reply_markup: {

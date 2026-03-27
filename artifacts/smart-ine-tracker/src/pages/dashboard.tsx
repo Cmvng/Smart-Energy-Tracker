@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
-import { useAuth } from "@/lib/auth";
+import { useAuth, displayName } from "@/lib/auth";
 import { useAddSheet } from "@/lib/add-sheet-context";
 import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns";
+import ShareStatsModal from "@/components/ShareStatsModal";
 
 const NAVY = "#0A1628";
 const GREEN = "#00D37F";
@@ -55,6 +56,7 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { showAddSheet, openAddSheet, closeAddSheet } = useAddSheet();
   const [timeframe, setTimeframe] = useState<"day" | "week" | "month" | "year">("week");
+  const [showShare, setShowShare] = useState(false);
   const [, navigate] = useLocation();
 
   const { data: summary, loading: summaryLoading, reload: reloadSummary } =
@@ -132,7 +134,7 @@ export default function Dashboard() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
               <p className="text-white/60 text-sm mt-0.5">
-                Welcome back, {user?.name?.split(" ")[0] || "there"}
+                Welcome back, {user?.nickname ? `@${user.nickname}` : user?.name?.split(" ")[0] || "there"} 👋
               </p>
             </div>
             <button
@@ -221,6 +223,17 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* Share Stats Button */}
+          <div className="px-3 mt-3 md:px-0">
+            <button
+              onClick={() => setShowShare(true)}
+              className="w-full py-3 rounded-2xl text-sm font-bold border-2 transition-all active:scale-95"
+              style={{ borderColor: NAVY, color: NAVY, background: "white" }}
+            >
+              📤 Share My Stats
+            </button>
+          </div>
+
           {/* Transactions */}
           <div className="px-5 py-5 md:px-0 md:py-6">
             <div className="flex items-center justify-between mb-3">
@@ -297,6 +310,8 @@ export default function Dashboard() {
       </button>
 
       {/* Add Sheet / Modal */}
+      {showShare && <ShareStatsModal onClose={() => setShowShare(false)} />}
+
       {showAddSheet && (
         <AddSheet
           onClose={closeAddSheet}
