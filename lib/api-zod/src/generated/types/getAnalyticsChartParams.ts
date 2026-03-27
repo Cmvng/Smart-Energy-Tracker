@@ -6,7 +6,6 @@
  * OpenAPI spec version: 0.3.0
  */
 
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
+export type GetAnalyticsChartParams = {
+  days?: number;
+};

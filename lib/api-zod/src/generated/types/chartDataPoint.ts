@@ -6,7 +6,9 @@
  * OpenAPI spec version: 0.3.0
  */
 
-export interface LoginRequest {
-  email: string;
-  password: string;
+export interface ChartDataPoint {
+  date: string;
+  income_usd: number;
+  expense_usd: number;
+  net_usd: number;
 }

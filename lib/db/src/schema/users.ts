@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, varchar, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -9,6 +9,7 @@ export const usersTable = pgTable("users", {
   name: varchar("name", { length: 255 }).notNull(),
   mode: varchar("mode", { length: 20 }).notNull().default("individual"),
   home_currency: varchar("home_currency", { length: 10 }).notNull().default("USD"),
+  notification_frequency: varchar("notification_frequency", { length: 20 }).notNull().default("daily"),
   created_at: timestamp("created_at").notNull().defaultNow(),
 });
 

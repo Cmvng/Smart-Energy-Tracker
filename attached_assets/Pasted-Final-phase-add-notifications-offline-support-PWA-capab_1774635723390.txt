@@ -1,0 +1,45 @@
+Final phase — add notifications, offline support, PWA capability, and polish the Smart i-n-E Tracker into a shippable product.
+
+BACKEND:
+
+1. Notification preferences — already stored in DB from Phase 3. Now add a scheduled job using node-cron:
+   - Daily reminder: if user has notification_frequency = 'daily', log "Reminder: [user email] — log your finances today" (we'll connect real push later)
+   - Add POST /api/notifications/test — triggers a test console log reminder for the logged-in user
+   - Add a notifications_log table: id, user_id, sent_at, type, message
+
+2. PATCH /api/user — update name, home_currency, notification_frequency for the logged-in user
+
+3. Add a simple rate limiter (express-rate-limit) to all API routes: max 100 requests per 15 minutes per IP
+
+FRONTEND:
+
+1. PWA setup:
+   - Add a manifest.json: name "Smart i-n-E Tracker", short_name "iNE Tracker", theme_color "#0A1628", background_color "#F5F6FA", display "standalone", icons (generate simple placeholder icons)
+   - Add a service worker that caches the app shell (HTML, CSS, JS) for offline use
+   - Show an "Offline mode" banner when navigator.onLine is false
+
+2. Offline transaction queue:
+   - If the user adds a transaction while offline (navigator.onLine is false), store it in localStorage under key "offline_queue" as a JSON array
+   - When the app comes back online, automatically POST each queued transaction to the API and clear the queue
+   - Show a small badge on the FAB "+" button if there are queued offline transactions (e.g. "2 pending")
+
+3. Onboarding flow for new users (show once, then never again — store in localStorage):
+   - Screen 1: App name + tagline "Track every naira. Know your profit." + Get Started button
+   - Screen 2: Select mode — Individual or Business (large tap targets, icons, descriptions)
+   - Screen 3: Select home currency — searchable list of 30 currencies
+   - Screen 4: Enable notifications prompt (just a Yes/No for now) + "Start Tracking" button that completes onboarding and goes to /dashboard
+
+4. Final UI polish:
+   - Add a smooth slide-up animation when opening the /add screen
+   - Add a success toast notification after saving a transaction ("Income saved — +$X.XX")
+   - Add pull-to-refresh on the dashboard transaction list
+   - Make all tap targets minimum 44px height
+   - Add empty state illustrations (simple SVG shapes, no external images) for: no transactions yet, no analytics data yet
+   - Ensure the entire app is usable one-handed on a 390px wide screen
+
+5. Final environment variables needed (remind me to set these in Replit Secrets):
+   - DATABASE_URL (already set)
+   - JWT_SECRET (generate a random 32-char string)
+   - EXCHANGE_RATES_API_KEY (from openexchangerates.org)
+
+Do a final check: make sure all API errors return proper JSON error messages (not HTML), all money values are formatted consistently, and the app doesn't crash if the exchange rates API is unreachable (fall back to cached rates in DB).

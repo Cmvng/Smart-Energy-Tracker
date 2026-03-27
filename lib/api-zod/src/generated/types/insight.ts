@@ -5,8 +5,10 @@
  * Smart i-n-E Tracker API
  * OpenAPI spec version: 0.3.0
  */
+import type { InsightIcon } from "./insightIcon";
 
-export interface LoginRequest {
-  email: string;
-  password: string;
+export interface Insight {
+  type: string;
+  message: string;
+  icon: InsightIcon;
 }

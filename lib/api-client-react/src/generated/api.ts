@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * Smart i-n-E Tracker API
- * OpenAPI spec version: 0.2.0
+ * OpenAPI spec version: 0.3.0
  */
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
@@ -18,19 +18,23 @@ import type {
 
 import type {
   AuthResponse,
+  ChartDataPoint,
   CreateTransactionRequest,
   Currency,
   CurrencyRefreshResponse,
   DeleteResponse,
   ErrorResponse,
+  GetAnalyticsChartParams,
   GetTransactionSummaryParams,
   HealthStatus,
+  Insight,
   ListTransactionsParams,
   LoginRequest,
   RegisterRequest,
   Transaction,
   TransactionListResponse,
   TransactionSummary,
+  UpdateUserRequest,
   UserResponse,
 } from "./api.schemas";
 
@@ -118,9 +122,6 @@ export function useHealthCheck<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
-/**
- * @summary Register a new user
- */
 export const getRegisterUserUrl = () => {
   return `/api/auth/register`;
 };
@@ -181,9 +182,6 @@ export type RegisterUserMutationResult = NonNullable<
 export type RegisterUserMutationBody = BodyType<RegisterRequest>;
 export type RegisterUserMutationError = ErrorType<ErrorResponse>;
 
-/**
- * @summary Register a new user
- */
 export const useRegisterUser = <
   TError = ErrorType<ErrorResponse>,
   TContext = unknown,
@@ -204,9 +202,6 @@ export const useRegisterUser = <
   return useMutation(getRegisterUserMutationOptions(options));
 };
 
-/**
- * @summary Login user
- */
 export const getLoginUserUrl = () => {
   return `/api/auth/login`;
 };
@@ -267,9 +262,6 @@ export type LoginUserMutationResult = NonNullable<
 export type LoginUserMutationBody = BodyType<LoginRequest>;
 export type LoginUserMutationError = ErrorType<ErrorResponse>;
 
-/**
- * @summary Login user
- */
 export const useLoginUser = <
   TError = ErrorType<ErrorResponse>,
   TContext = unknown,
@@ -290,9 +282,6 @@ export const useLoginUser = <
   return useMutation(getLoginUserMutationOptions(options));
 };
 
-/**
- * @summary Get current user
- */
 export const getGetCurrentUserUrl = () => {
   return `/api/auth/me`;
 };
@@ -341,10 +330,6 @@ export type GetCurrentUserQueryResult = NonNullable<
 >;
 export type GetCurrentUserQueryError = ErrorType<ErrorResponse>;
 
-/**
- * @summary Get current user
- */
-
 export function useGetCurrentUser<
   TData = Awaited<ReturnType<typeof getCurrentUser>>,
   TError = ErrorType<ErrorResponse>,
@@ -366,8 +351,91 @@ export function useGetCurrentUser<
 }
 
 /**
- * @summary Get all currencies with rates
+ * @summary Update user profile
  */
+export const getUpdateUserUrl = () => {
+  return `/api/user`;
+};
+
+export const updateUser = async (
+  updateUserRequest: UpdateUserRequest,
+  options?: RequestInit,
+): Promise<UserResponse> => {
+  return customFetch<UserResponse>(getUpdateUserUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateUserRequest),
+  });
+};
+
+export const getUpdateUserMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateUser>>,
+    TError,
+    { data: BodyType<UpdateUserRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateUser>>,
+  TError,
+  { data: BodyType<UpdateUserRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateUser>>,
+    { data: BodyType<UpdateUserRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateUser(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateUser>>
+>;
+export type UpdateUserMutationBody = BodyType<UpdateUserRequest>;
+export type UpdateUserMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Update user profile
+ */
+export const useUpdateUser = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateUser>>,
+    TError,
+    { data: BodyType<UpdateUserRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateUser>>,
+  TError,
+  { data: BodyType<UpdateUserRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateUserMutationOptions(options));
+};
+
 export const getGetCurrenciesUrl = () => {
   return `/api/currencies`;
 };
@@ -416,10 +484,6 @@ export type GetCurrenciesQueryResult = NonNullable<
 >;
 export type GetCurrenciesQueryError = ErrorType<unknown>;
 
-/**
- * @summary Get all currencies with rates
- */
-
 export function useGetCurrencies<
   TData = Awaited<ReturnType<typeof getCurrencies>>,
   TError = ErrorType<unknown>,
@@ -440,9 +504,6 @@ export function useGetCurrencies<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
-/**
- * @summary Fetch live exchange rates and update DB
- */
 export const getRefreshCurrencyRatesUrl = () => {
   return `/api/currencies/refresh`;
 };
@@ -498,9 +559,6 @@ export type RefreshCurrencyRatesMutationResult = NonNullable<
 
 export type RefreshCurrencyRatesMutationError = ErrorType<ErrorResponse>;
 
-/**
- * @summary Fetch live exchange rates and update DB
- */
 export const useRefreshCurrencyRates = <
   TError = ErrorType<ErrorResponse>,
   TContext = unknown,
@@ -521,9 +579,6 @@ export const useRefreshCurrencyRates = <
   return useMutation(getRefreshCurrencyRatesMutationOptions(options));
 };
 
-/**
- * @summary Create a transaction
- */
 export const getCreateTransactionUrl = () => {
   return `/api/transactions`;
 };
@@ -584,9 +639,6 @@ export type CreateTransactionMutationResult = NonNullable<
 export type CreateTransactionMutationBody = BodyType<CreateTransactionRequest>;
 export type CreateTransactionMutationError = ErrorType<ErrorResponse>;
 
-/**
- * @summary Create a transaction
- */
 export const useCreateTransaction = <
   TError = ErrorType<ErrorResponse>,
   TContext = unknown,
@@ -607,9 +659,6 @@ export const useCreateTransaction = <
   return useMutation(getCreateTransactionMutationOptions(options));
 };
 
-/**
- * @summary List transactions for the user
- */
 export const getListTransactionsUrl = (params?: ListTransactionsParams) => {
   const normalizedParams = new URLSearchParams();
 
@@ -677,10 +726,6 @@ export type ListTransactionsQueryResult = NonNullable<
 >;
 export type ListTransactionsQueryError = ErrorType<unknown>;
 
-/**
- * @summary List transactions for the user
- */
-
 export function useListTransactions<
   TData = Awaited<ReturnType<typeof listTransactions>>,
   TError = ErrorType<unknown>,
@@ -704,9 +749,6 @@ export function useListTransactions<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
-/**
- * @summary Get aggregated transaction summary
- */
 export const getGetTransactionSummaryUrl = (
   params?: GetTransactionSummaryParams,
 ) => {
@@ -777,10 +819,6 @@ export type GetTransactionSummaryQueryResult = NonNullable<
 >;
 export type GetTransactionSummaryQueryError = ErrorType<unknown>;
 
-/**
- * @summary Get aggregated transaction summary
- */
-
 export function useGetTransactionSummary<
   TData = Awaited<ReturnType<typeof getTransactionSummary>>,
   TError = ErrorType<unknown>,
@@ -804,9 +842,6 @@ export function useGetTransactionSummary<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
-/**
- * @summary Soft delete a transaction
- */
 export const getDeleteTransactionUrl = (id: string) => {
   return `/api/transactions/${id}`;
 };
@@ -865,9 +900,6 @@ export type DeleteTransactionMutationResult = NonNullable<
 
 export type DeleteTransactionMutationError = ErrorType<ErrorResponse>;
 
-/**
- * @summary Soft delete a transaction
- */
 export const useDeleteTransaction = <
   TError = ErrorType<ErrorResponse>,
   TContext = unknown,
@@ -887,3 +919,240 @@ export const useDeleteTransaction = <
 > => {
   return useMutation(getDeleteTransactionMutationOptions(options));
 };
+
+/**
+ * @summary Get 30-day daily P&L chart data
+ */
+export const getGetAnalyticsChartUrl = (params?: GetAnalyticsChartParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/analytics/chart?${stringifiedParams}`
+    : `/api/analytics/chart`;
+};
+
+export const getAnalyticsChart = async (
+  params?: GetAnalyticsChartParams,
+  options?: RequestInit,
+): Promise<ChartDataPoint[]> => {
+  return customFetch<ChartDataPoint[]>(getGetAnalyticsChartUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAnalyticsChartQueryKey = (
+  params?: GetAnalyticsChartParams,
+) => {
+  return [`/api/analytics/chart`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAnalyticsChartQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAnalyticsChart>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAnalyticsChartParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsChart>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAnalyticsChartQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAnalyticsChart>>
+  > = ({ signal }) => getAnalyticsChart(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAnalyticsChart>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAnalyticsChartQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAnalyticsChart>>
+>;
+export type GetAnalyticsChartQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get 30-day daily P&L chart data
+ */
+
+export function useGetAnalyticsChart<
+  TData = Awaited<ReturnType<typeof getAnalyticsChart>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAnalyticsChartParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsChart>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAnalyticsChartQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get smart text insights
+ */
+export const getGetAnalyticsInsightsUrl = () => {
+  return `/api/analytics/insights`;
+};
+
+export const getAnalyticsInsights = async (
+  options?: RequestInit,
+): Promise<Insight[]> => {
+  return customFetch<Insight[]>(getGetAnalyticsInsightsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAnalyticsInsightsQueryKey = () => {
+  return [`/api/analytics/insights`] as const;
+};
+
+export const getGetAnalyticsInsightsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAnalyticsInsights>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAnalyticsInsights>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAnalyticsInsightsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAnalyticsInsights>>
+  > = ({ signal }) => getAnalyticsInsights({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAnalyticsInsights>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAnalyticsInsightsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAnalyticsInsights>>
+>;
+export type GetAnalyticsInsightsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get smart text insights
+ */
+
+export function useGetAnalyticsInsights<
+  TData = Awaited<ReturnType<typeof getAnalyticsInsights>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAnalyticsInsights>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAnalyticsInsightsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Export all transactions as CSV
+ */
+export const getExportCsvUrl = () => {
+  return `/api/export/csv`;
+};
+
+export const exportCsv = async (options?: RequestInit): Promise<string> => {
+  return customFetch<string>(getExportCsvUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportCsvQueryKey = () => {
+  return [`/api/export/csv`] as const;
+};
+
+export const getExportCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportCsv>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof exportCsv>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportCsvQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof exportCsv>>> = ({
+    signal,
+  }) => exportCsv({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportCsv>>
+>;
+export type ExportCsvQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export all transactions as CSV
+ */
+
+export function useExportCsv<
+  TData = Awaited<ReturnType<typeof exportCsv>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof exportCsv>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportCsvQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

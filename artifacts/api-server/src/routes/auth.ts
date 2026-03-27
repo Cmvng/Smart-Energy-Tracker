@@ -117,6 +117,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
       email: user.email,
       mode: user.mode,
       home_currency: user.home_currency,
+      notification_frequency: user.notification_frequency,
       created_at: user.created_at,
     });
   } catch (err) {

@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * Smart i-n-E Tracker API
- * OpenAPI spec version: 0.2.0
+ * OpenAPI spec version: 0.3.0
  */
 
 export interface UserResponse {
@@ -12,5 +12,6 @@ export interface UserResponse {
   email: string;
   mode: string;
   home_currency: string;
+  notification_frequency?: string;
   created_at: string;
 }

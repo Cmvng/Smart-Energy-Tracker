@@ -19,14 +19,26 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 ## Application: Smart i-n-E Tracker
 
-A full-stack Income & Expense Tracker app with:
-- **Frontend**: React + Vite, mobile-first (max 430px), fintech color scheme
-  - Deep navy (#0A1628) headers
-  - Bright green (#00D37F) for income
-  - Coral red (#FF4757) for expenses
-  - Light gray (#F5F6FA) page background
-- **Auth pages**: /login and /register
-- **Dashboard**: Placeholder at /dashboard (Phase 2)
+A full-stack mobile-first (max 430px) Income & Expense Tracker with JWT auth, multi-currency FX conversion, analytics, and settings.
+
+**Demo credentials:** `demo@smartine.app` / `demo1234`
+
+### Color Scheme
+- Deep navy `#0A1628` — headers/active nav
+- Bright green `#00D37F` — income
+- Coral red `#FF4757` — expenses
+- Light gray `#F7F8FA` — page backgrounds
+
+### Frontend Pages
+- `/login` — JWT login form
+- `/register` — User registration
+- `/dashboard` — Timeframe tabs (Today/Week/Month/Year), income/expense/net cards, insight banner, transaction list, FAB "+" button
+- `/add` — Add income/expense transaction with currency selector (30 currencies), FX conversion
+- `/analytics` — 30-day bar chart (recharts), 7d/30d/3mo timeframe tabs, smart insight cards, quick stats
+- `/settings` — User profile, home currency, individual/business mode, notification frequency, CSV export, exchange rate refresh, logout
+
+### Bottom Navigation
+Persistent across all protected pages: Home | Add | Analytics | Settings
 
 ## Structure
 
@@ -49,58 +61,60 @@ artifacts-monorepo/
 
 ## Database Schema
 
-1. **users** — id (uuid), email, password_hash, name, mode (individual/business), home_currency, created_at
+1. **users** — id (uuid), email, password_hash, name, mode (individual/business), home_currency, notification_frequency, created_at
 2. **accounts** — id (uuid), user_id (FK), type, label, created_at
-3. **transactions** — id (uuid), account_id (FK), type (income/expense), amount_original, currency_code, amount_usd, fx_rate_used, notes, transacted_at, synced, created_at
+3. **transactions** — id (uuid), account_id (FK), type (income/expense), amount_original, currency_code, amount_usd, fx_rate_used, notes, transacted_at, deleted_at, synced, created_at
 4. **currencies** — code (PK), name, rate_to_usd, rate_updated_at (seeded with 30 currencies)
 5. **analytics_snapshots** — id (uuid), user_id (FK), timeframe, total_income_usd, total_expense_usd, net_usd, period_start, period_end
 
+**FX conversion:** `rate_to_usd` stores units of foreign currency per 1 USD. To convert to USD: `amount_usd = amount_original / rate_to_usd`.
+
 ## API Routes
 
+### Auth
 - `GET /api/healthz` — Health check
-- `POST /api/auth/register` — Register user + create default account, returns JWT
-- `POST /api/auth/login` — Validate credentials, returns JWT
+- `POST /api/auth/register` — Register user + create default account, returns JWT + account_id
+- `POST /api/auth/login` — Validate credentials, returns JWT + account_id
 - `GET /api/auth/me` — Get current user (requires Bearer token)
+
+### User
+- `PATCH /api/user` — Update home_currency, mode, notification_frequency
+
+### Currencies
+- `GET /api/currencies` — List all 30 currencies with rates
+- `POST /api/currencies/refresh` — Fetch live rates (requires EXCHANGE_RATES_API_KEY env var)
+
+### Transactions
+- `POST /api/transactions` — Create transaction with FX conversion
+- `GET /api/transactions` — Paginated list with ?timeframe=day|week|month|year&type=income|expense
+- `GET /api/transactions/summary` — Income/expense/net summary for a timeframe
+- `DELETE /api/transactions/:id` — Soft delete
+
+### Analytics
+- `GET /api/analytics/chart?days=30` — Daily P&L chart data for the last N days
+- `GET /api/analytics/insights` — 3+ plain-English insights (spending rate, best day, week trend, loss streak)
+
+### Export
+- `GET /api/export/csv` — Download all transactions as CSV file
 
 ## TypeScript & Composite Projects
 
 Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+- **Always typecheck from the root** — run `pnpm run typecheck`
+- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck
+- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array
 
 ## Root Scripts
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
+- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages
 - `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API client + Zod types from OpenAPI spec
+- `pnpm --filter @workspace/db run push-force` — push schema changes to DB
 
-## Packages
+## Important Notes
 
-### `artifacts/api-server` (`@workspace/api-server`)
-
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
-
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/auth.ts` handles auth
-- Auth: `src/middlewares/auth.ts` — JWT creation and `requireAuth` middleware
-- Depends on: `@workspace/db`, `@workspace/api-zod`, `jsonwebtoken`, `bcryptjs`
-
-### `artifacts/smart-ine-tracker` (`@workspace/smart-ine-tracker`)
-
-React + Vite frontend. Mobile-first (max-width 430px). Uses React Router for routing.
-
-- Pages: `/login`, `/register`, `/dashboard`
-- Auth context in `src/lib/auth.tsx`
-- Depends on: `@workspace/api-client-react`, `react-hook-form`, `@hookform/resolvers`, `framer-motion`
-
-### `lib/db` (`@workspace/db`)
-
-Database layer using Drizzle ORM with PostgreSQL.
-
-- `pnpm --filter @workspace/db run push` — push schema changes to DB
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-Owns the OpenAPI 3.1 spec. Run codegen: `pnpm --filter @workspace/api-spec run codegen`
+- Never use `import { z } from "zod"` in `artifacts/api-server` — zod is not a direct dependency. Validate manually or use the workspace catalog.
+- Auth endpoints return `account_id` in the user object so the frontend can store it in `localStorage` for transaction creation.
+- `account_id` is stored in `localStorage` as `"account_id"` after login/register.
+- JWT token stored in `localStorage` as `"token"`, 7-day expiry.

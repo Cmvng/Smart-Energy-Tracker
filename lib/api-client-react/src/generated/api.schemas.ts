@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * Smart i-n-E Tracker API
- * OpenAPI spec version: 0.2.0
+ * OpenAPI spec version: 0.3.0
  */
 export interface HealthStatus {
   status: string;
@@ -37,12 +37,37 @@ export interface UserResponse {
   email: string;
   mode: string;
   home_currency: string;
+  notification_frequency?: string;
   created_at: string;
 }
 
 export interface AuthResponse {
   token: string;
   user: UserResponse;
+}
+
+export type UpdateUserRequestMode =
+  (typeof UpdateUserRequestMode)[keyof typeof UpdateUserRequestMode];
+
+export const UpdateUserRequestMode = {
+  individual: "individual",
+  business: "business",
+} as const;
+
+export type UpdateUserRequestNotificationFrequency =
+  (typeof UpdateUserRequestNotificationFrequency)[keyof typeof UpdateUserRequestNotificationFrequency];
+
+export const UpdateUserRequestNotificationFrequency = {
+  daily: "daily",
+  every_3_days: "every_3_days",
+  weekly: "weekly",
+  off: "off",
+} as const;
+
+export interface UpdateUserRequest {
+  home_currency?: string;
+  mode?: UpdateUserRequestMode;
+  notification_frequency?: UpdateUserRequestNotificationFrequency;
 }
 
 export interface Currency {
@@ -119,6 +144,28 @@ export interface DeleteResponse {
   message: string;
 }
 
+export interface ChartDataPoint {
+  date: string;
+  income_usd: number;
+  expense_usd: number;
+  net_usd: number;
+}
+
+export type InsightIcon = (typeof InsightIcon)[keyof typeof InsightIcon];
+
+export const InsightIcon = {
+  "trend-up": "trend-up",
+  "trend-down": "trend-down",
+  calendar: "calendar",
+  alert: "alert",
+} as const;
+
+export interface Insight {
+  type: string;
+  message: string;
+  icon: InsightIcon;
+}
+
 export interface ErrorResponse {
   error: string;
   message?: string;
@@ -162,3 +209,7 @@ export const GetTransactionSummaryTimeframe = {
   month: "month",
   year: "year",
 } as const;
+
+export type GetAnalyticsChartParams = {
+  days?: number;
+};

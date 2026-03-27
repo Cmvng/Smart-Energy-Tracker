@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * Smart i-n-E Tracker API
- * OpenAPI spec version: 0.2.0
+ * OpenAPI spec version: 0.3.0
  */
 import * as zod from "zod";
 
@@ -14,9 +14,6 @@ export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
 
-/**
- * @summary Register a new user
- */
 export const registerUserBodyPasswordMin = 6;
 
 export const registerUserBodyHomeCurrencyDefault = `USD`;
@@ -29,9 +26,6 @@ export const RegisterUserBody = zod.object({
   home_currency: zod.string().default(registerUserBodyHomeCurrencyDefault),
 });
 
-/**
- * @summary Login user
- */
 export const LoginUserBody = zod.object({
   email: zod.string().email(),
   password: zod.string(),
@@ -45,25 +39,42 @@ export const LoginUserResponse = zod.object({
     email: zod.string(),
     mode: zod.string(),
     home_currency: zod.string(),
+    notification_frequency: zod.string().optional(),
     created_at: zod.string(),
   }),
 });
 
-/**
- * @summary Get current user
- */
 export const GetCurrentUserResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
   email: zod.string(),
   mode: zod.string(),
   home_currency: zod.string(),
+  notification_frequency: zod.string().optional(),
   created_at: zod.string(),
 });
 
 /**
- * @summary Get all currencies with rates
+ * @summary Update user profile
  */
+export const UpdateUserBody = zod.object({
+  home_currency: zod.string().optional(),
+  mode: zod.enum(["individual", "business"]).optional(),
+  notification_frequency: zod
+    .enum(["daily", "every_3_days", "weekly", "off"])
+    .optional(),
+});
+
+export const UpdateUserResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  email: zod.string(),
+  mode: zod.string(),
+  home_currency: zod.string(),
+  notification_frequency: zod.string().optional(),
+  created_at: zod.string(),
+});
+
 export const GetCurrenciesResponseItem = zod.object({
   code: zod.string(),
   name: zod.string(),
@@ -72,17 +83,11 @@ export const GetCurrenciesResponseItem = zod.object({
 });
 export const GetCurrenciesResponse = zod.array(GetCurrenciesResponseItem);
 
-/**
- * @summary Fetch live exchange rates and update DB
- */
 export const RefreshCurrencyRatesResponse = zod.object({
   updated_count: zod.number(),
   message: zod.string(),
 });
 
-/**
- * @summary Create a transaction
- */
 export const CreateTransactionBody = zod.object({
   account_id: zod.string(),
   type: zod.enum(["income", "expense"]),
@@ -92,9 +97,6 @@ export const CreateTransactionBody = zod.object({
   transacted_at: zod.string().optional(),
 });
 
-/**
- * @summary List transactions for the user
- */
 export const listTransactionsQueryLimitDefault = 50;
 export const listTransactionsQueryOffsetDefault = 0;
 
@@ -125,9 +127,6 @@ export const ListTransactionsResponse = zod.object({
   offset: zod.number(),
 });
 
-/**
- * @summary Get aggregated transaction summary
- */
 export const getTransactionSummaryQueryTimeframeDefault = `day`;
 
 export const GetTransactionSummaryQueryParams = zod.object({
@@ -147,9 +146,6 @@ export const GetTransactionSummaryResponse = zod.object({
   timeframe: zod.string(),
 });
 
-/**
- * @summary Soft delete a transaction
- */
 export const DeleteTransactionParams = zod.object({
   id: zod.coerce.string(),
 });
@@ -158,3 +154,34 @@ export const DeleteTransactionResponse = zod.object({
   success: zod.boolean(),
   message: zod.string(),
 });
+
+/**
+ * @summary Get 30-day daily P&L chart data
+ */
+export const getAnalyticsChartQueryDaysDefault = 30;
+
+export const GetAnalyticsChartQueryParams = zod.object({
+  days: zod.coerce.number().default(getAnalyticsChartQueryDaysDefault),
+});
+
+export const GetAnalyticsChartResponseItem = zod.object({
+  date: zod.string(),
+  income_usd: zod.number(),
+  expense_usd: zod.number(),
+  net_usd: zod.number(),
+});
+export const GetAnalyticsChartResponse = zod.array(
+  GetAnalyticsChartResponseItem,
+);
+
+/**
+ * @summary Get smart text insights
+ */
+export const GetAnalyticsInsightsResponseItem = zod.object({
+  type: zod.string(),
+  message: zod.string(),
+  icon: zod.enum(["trend-up", "trend-down", "calendar", "alert"]),
+});
+export const GetAnalyticsInsightsResponse = zod.array(
+  GetAnalyticsInsightsResponseItem,
+);

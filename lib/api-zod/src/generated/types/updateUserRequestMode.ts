@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.3.0
  */
 
-export type RegisterRequestMode =
-  (typeof RegisterRequestMode)[keyof typeof RegisterRequestMode];
+export type UpdateUserRequestMode =
+  (typeof UpdateUserRequestMode)[keyof typeof UpdateUserRequestMode];
 
-export const RegisterRequestMode = {
+export const UpdateUserRequestMode = {
   individual: "individual",
   business: "business",
 } as const;

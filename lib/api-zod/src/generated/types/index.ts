@@ -3,19 +3,23 @@
  * Do not edit manually.
  * Api
  * Smart i-n-E Tracker API
- * OpenAPI spec version: 0.2.0
+ * OpenAPI spec version: 0.3.0
  */
 
 export * from "./authResponse";
+export * from "./chartDataPoint";
 export * from "./createTransactionRequest";
 export * from "./createTransactionRequestType";
 export * from "./currency";
 export * from "./currencyRefreshResponse";
 export * from "./deleteResponse";
 export * from "./errorResponse";
+export * from "./getAnalyticsChartParams";
 export * from "./getTransactionSummaryParams";
 export * from "./getTransactionSummaryTimeframe";
 export * from "./healthStatus";
+export * from "./insight";
+export * from "./insightIcon";
 export * from "./listTransactionsParams";
 export * from "./listTransactionsTimeframe";
 export * from "./listTransactionsType";
@@ -26,4 +30,7 @@ export * from "./transaction";
 export * from "./transactionListResponse";
 export * from "./transactionSummary";
 export * from "./transactionSummaryProfitStatus";
+export * from "./updateUserRequest";
+export * from "./updateUserRequestMode";
+export * from "./updateUserRequestNotificationFrequency";
 export * from "./userResponse";
