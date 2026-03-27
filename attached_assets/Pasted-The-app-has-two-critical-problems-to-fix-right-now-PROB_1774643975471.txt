@@ -1,0 +1,76 @@
+The app has two critical problems to fix right now:
+
+PROBLEM 1 - BLANK SCREEN:
+The app is showing a blank screen. Fix this completely:
+1. Run: cd client && npm run build -- --force
+2. Make sure Express serves the built files correctly:
+   - app.use(express.static(path.join(__dirname, '../client/dist')))
+   - app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/dist/index.html')))
+   These lines must come AFTER all /api routes
+3. Check the browser console for JavaScript errors and fix them
+4. Restart the server completely after fixing
+5. Confirm the app loads by checking the root URL returns HTML not an error
+
+PROBLEM 2 - LANDING PAGE NOT SHOWING:
+Build a beautiful landing page that shows BEFORE login. This is the FIRST thing any visitor sees when they open the app URL.
+
+The logic:
+- Check localStorage for key 'ine_visited'
+- If NOT set: show the landing page
+- If set: go straight to /login
+- When any button on landing page is clicked: set 'ine_visited' = 'true' in localStorage
+
+Create this as the root route '/' in React Router BEFORE the /login and /dashboard routes.
+
+LANDING PAGE DESIGN - make it stunning:
+
+Full page, navy #0A1628 background, white text.
+
+MOBILE LAYOUT (the primary design):
+- Top section (40% of screen):
+  * Large money/chart emoji or simple SVG icon centered
+  * App name "Smart i-n-E" in large bold white text (32px)
+  * "Tracker" on second line in green #00D37F (32px)
+  * Tagline below: "Track every naira. Know your profit." in lighter white (16px)
+
+- Middle section (30% of screen):
+  3 feature rows, each with icon + text:
+  ⚡ "Log income or expenses in under 5 seconds"
+  🌍 "Works in any currency — auto converts to USD"  
+  📊 "Smart insights that show if you're winning"
+
+- Bottom section (30% of screen):
+  * Big green button (full width, 56px tall, rounded):
+    "Get Started — It's Free →"
+    → goes to /register, sets ine_visited=true
+  * White outline button below it (full width, 52px tall):
+    "I already have an account"  
+    → goes to /login, sets ine_visited=true
+  * Very small text at bottom: "No credit card. No setup fee. Just track."
+
+DESKTOP LAYOUT (768px+):
+- Split screen: left half navy with all the text content, right half shows a mockup/preview
+- Right half: dark card (#1a2940) showing a fake dashboard preview with:
+  * Mini header bar
+  * Three colored stat cards (Income green, Expense red, Net green)
+  * Two fake transaction rows
+  * Green FAB button
+- Left half: same content as mobile but larger text and more spacing
+- Buttons on left side, max-width 380px
+
+ANIMATIONS (simple, no libraries needed):
+- On page load: content fades in over 0.5 seconds (opacity 0 to 1)
+- Feature rows slide in from left with 0.1s delay between each
+- Buttons have a gentle pulse animation to draw attention
+- Green button has a subtle glow effect
+
+Make sure this landing page looks like a real fintech product - 
+professional, trustworthy, and exciting. It should make someone 
+want to sign up immediately.
+
+After fixing, confirm:
+1. App loads without blank screen
+2. Opening the app URL shows the landing page first
+3. Clicking Get Started goes to register page
+4. Clicking Sign In goes to login page  
+5. After visiting once, refreshing goes straight to login
