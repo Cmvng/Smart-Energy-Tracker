@@ -1,0 +1,103 @@
+Fix the back navigation to landing page.
+
+PROBLEM:
+When user is on the login or register page and 
+taps the browser back button or a back arrow,
+it should go back to the landing page.
+Currently it either does nothing or loops.
+
+FIXES NEEDED:
+
+1. BROWSER BACK BUTTON:
+When navigating from landing page to login/register,
+use navigate('/login') NOT navigate('/login', {replace: true})
+The replace:true is what breaks the back button —
+it replaces the history entry instead of adding one.
+Remove replace:true from all navigation calls that 
+go FROM the landing page TO login/register.
+
+2. ADD BACK ARROW ON LOGIN + REGISTER PAGES:
+Add a visible back button at the top-left of both 
+the login and register pages:
+- Arrow icon ← (use text or unicode ‹ or ←)
+- Position: top-left, inside the navy header
+- Style: white color, font-size 20px, 
+  padding 8px, cursor pointer, no background
+- Label next to arrow: "Back" in white 14px
+- onClick: navigate(-1) 
+  This goes back in browser history to landing page
+
+The back button must look like this in the header:
+← Back          Smart i-n-E          [empty]
+(left)           (center)             (right)
+
+3. LANDING PAGE KEY FIX:
+The landing page currently sets 'ine_landing_v4' = true
+when user clicks Get Started or Sign In.
+This means once they click, they can NEVER see 
+the landing page again even if they go back.
+
+Change this behavior:
+- Do NOT set 'ine_landing_v4' in localStorage when 
+  buttons are clicked
+- Instead only set it AFTER successful login or 
+  successful register
+- This way: user can always go back to landing page 
+  from login/register
+- But once logged in successfully: landing page 
+  is skipped going forward
+
+Update the logic:
+- Landing page buttons: just navigate, don't set flag
+- After successful login: 
+  localStorage.setItem('ine_landing_v4', 'true')
+  then navigate to /dashboard
+- After successful register:
+  localStorage.setItem('ine_landing_v4', 'true')  
+  then navigate to /dashboard
+- Logout button in settings:
+  localStorage.removeItem('ine_landing_v4')
+  localStorage.removeItem('ine_token')
+  localStorage.removeItem('ine_user')
+  navigate('/')
+  This means after logout user sees landing page again
+
+4. ROOT REDIRECT LOGIC UPDATE:
+function RootRedirect() {
+  const token = localStorage.getItem('ine_token')
+  const seen = localStorage.getItem('ine_landing_v4')
+  
+  // If logged in: always go to dashboard
+  if (token) return <Navigate to="/dashboard" replace />
+  
+  // If they have seen landing AND successfully 
+  // logged in before (flag set): go to login
+  if (seen) return <Navigate to="/login" replace />
+  
+  // First time visitor: show landing page
+  return <LandingPage />
+}
+
+5. LOGOUT ALSO CLEARS THE FLAG:
+In Settings logout handler, clear everything:
+localStorage.removeItem('ine_token')
+localStorage.removeItem('ine_user')  
+localStorage.removeItem('ine_landing_v4')
+navigate('/')
+So after logout: user sees the full landing page again
+This is actually a good re-engagement experience.
+
+After fixing:
+1. cd client && npm run build
+2. Restart server
+3. Test this exact flow:
+   - Visit app → see landing page ✓
+   - Click Get Started → go to register ✓
+   - Click back button → back to landing page ✓
+   - Click Sign In → go to login ✓  
+   - Click back button → back to landing page ✓
+   - Log in successfully → go to dashboard ✓
+   - Click back button → stay on dashboard 
+     (cannot go back to login) ✓
+   - Log out → see landing page again ✓
+4. Confirm all 7 steps work correctly

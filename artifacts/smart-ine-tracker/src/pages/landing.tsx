@@ -120,7 +120,6 @@ export default function Landing() {
   }, []);
 
   const go = (path: string) => {
-    markVisited();
     navigate(path);
   };
 

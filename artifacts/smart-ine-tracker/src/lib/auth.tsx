@@ -64,9 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    localStorage.removeItem("ine_landing_v4");
     setTokenState(null);
     setUserState(null);
-    setLocation("/login");
+    setLocation("/");
   }, [setLocation]);
 
   useEffect(() => {

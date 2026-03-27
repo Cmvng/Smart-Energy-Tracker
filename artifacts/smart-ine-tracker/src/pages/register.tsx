@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { markVisited } from "@/pages/landing";
 
 const CURRENCIES = [
   { code: "USD", name: "US Dollar" }, { code: "EUR", name: "Euro" }, { code: "GBP", name: "British Pound" },
@@ -52,6 +53,7 @@ export default function Register() {
       }
       setToken(data.token);
       setUser(data.user);
+      markVisited();
       setLocation("/dashboard");
     } catch {
       setError("Connection error. Please try again.");
@@ -64,9 +66,27 @@ export default function Register() {
     <div className="min-h-screen flex flex-col bg-[#F5F6FA]">
       <div className="bg-[#0A1628] px-6 pt-12 pb-20 relative overflow-hidden">
         <div className="absolute -bottom-10 -right-10 w-40 h-40 rounded-full bg-white/5" />
-        <Link href="/login" className="inline-flex items-center text-white/70 hover:text-white mb-8 text-sm font-medium">
-          ← Back to Login
-        </Link>
+        <div className="flex items-center justify-between mb-8">
+          <button
+            type="button"
+            onClick={() => window.history.back()}
+            className="flex items-center gap-1.5 text-white/80 hover:text-white transition-colors"
+            style={{ fontSize: 14, padding: 8 }}
+          >
+            <span style={{ fontSize: 20 }}>←</span>
+            <span style={{ fontSize: 14 }}>Back</span>
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-[#00D37F] flex items-center justify-center shadow-lg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" fill="white"/>
+                <path d="M2 17l10 5 10-5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <span className="text-white text-base font-bold">Smart i-n-E</span>
+          </div>
+          <div style={{ width: 60 }} />
+        </div>
         <h1 className="text-white text-3xl font-bold mb-2">Create account</h1>
         <p className="text-white/60 text-sm">Start tracking your income and expenses</p>
       </div>

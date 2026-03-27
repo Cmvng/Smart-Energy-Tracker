@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { markVisited } from "@/pages/landing";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -25,6 +26,7 @@ export default function Login() {
         setError(data.message || "Invalid credentials. Please try again.");
         return;
       }
+      markVisited();
       setToken(data.token);
       setUser(data.user);
       setLocation("/dashboard");
@@ -37,17 +39,29 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F5F6FA]">
-      <div className="bg-[#0A1628] px-6 pt-16 pb-20 relative overflow-hidden">
+      <div className="bg-[#0A1628] px-6 pt-12 pb-20 relative overflow-hidden">
         <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/5" />
         <div className="absolute top-8 right-8 w-20 h-20 rounded-full bg-[#00D37F]/10" />
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-xl bg-[#00D37F] flex items-center justify-center shadow-lg">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" fill="white"/>
-              <path d="M2 17l10 5 10-5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
+        <div className="flex items-center justify-between mb-8">
+          <button
+            type="button"
+            onClick={() => window.history.back()}
+            className="flex items-center gap-1.5 text-white/80 hover:text-white transition-colors"
+            style={{ fontSize: 14, padding: 8 }}
+          >
+            <span style={{ fontSize: 20 }}>←</span>
+            <span style={{ fontSize: 14 }}>Back</span>
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-[#00D37F] flex items-center justify-center shadow-lg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" fill="white"/>
+                <path d="M2 17l10 5 10-5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <span className="text-white text-base font-bold">Smart i-n-E</span>
           </div>
-          <span className="text-white text-xl font-bold">Smart i-n-E</span>
+          <div style={{ width: 60 }} />
         </div>
         <h1 className="text-white text-3xl font-bold mb-2">Welcome back</h1>
         <p className="text-white/60 text-sm">Sign in to continue tracking your finances</p>
