@@ -1,0 +1,235 @@
+Fix profile photo and nickname not persisting after 
+logout or session timeout. This is a critical bug.
+
+ROOT CAUSE TO FIX:
+The avatar and nickname are likely being saved to 
+localStorage only but not making it back from the 
+database on next login. Fix the entire save + 
+restore chain.
+
+═══════════════════════════════════════════════
+BACKEND FIXES
+═══════════════════════════════════════════════
+
+1. PATCH /api/user — make sure it saves to database:
+Make sure this route actually commits to PostgreSQL:
+UPDATE users 
+SET 
+  name = COALESCE($1, name),
+  nickname = COALESCE($2, nickname),
+  home_currency = COALESCE($3, home_currency),
+  notification_frequency = COALESCE($4, notification_frequency)
+WHERE id = $5
+RETURNING *
+
+Return the full updated user object including:
+id, email, name, nickname, avatar_url, mode, 
+home_currency, notification_frequency
+
+2. POST /api/user/avatar — make sure it saves to database:
+After converting to base64, run:
+UPDATE users 
+SET avatar_url = $1 
+WHERE id = $2
+RETURNING *
+
+Then return { user: updatedUser } with the full 
+user object including avatar_url.
+
+Confirm the avatar_url is actually being stored by 
+running after save:
+SELECT id, 
+       LEFT(avatar_url, 50) as avatar_preview,
+       nickname 
+FROM users 
+WHERE id = $1
+And logging the result to console.
+
+3. GET /api/auth/me — must return everything:
+SELECT 
+  id, email, name, nickname, avatar_url, 
+  mode, home_currency, notification_frequency,
+  telegram_chat_id, created_at
+FROM users 
+WHERE id = $1
+
+Never omit avatar_url or nickname from this query.
+This is what restores the session on page reload.
+
+4. POST /api/auth/login — return full user:
+After verifying password, return:
+SELECT 
+  id, email, name, nickname, avatar_url,
+  mode, home_currency, notification_frequency
+FROM users 
+WHERE id = $1
+
+Include avatar_url and nickname in the JWT payload 
+or at minimum in the response body so the frontend 
+can store it immediately on login.
+
+═══════════════════════════════════════════════
+FRONTEND FIXES
+═══════════════════════════════════════════════
+
+1. After successful login (login.tsx):
+Store the COMPLETE user object from API response:
+const userData = {
+  id: data.user.id,
+  email: data.user.email,
+  name: data.user.name,
+  nickname: data.user.nickname || '',
+  avatar_url: data.user.avatar_url || '',
+  mode: data.user.mode,
+  home_currency: data.user.home_currency,
+  notification_frequency: data.user.notification_frequency
+}
+localStorage.setItem('ine_user', JSON.stringify(userData))
+localStorage.setItem('ine_token', data.token)
+
+2. Auth context / useAuth hook:
+On app startup, do NOT just read from localStorage.
+Instead:
+- Read token from localStorage
+- If token exists: immediately call GET /api/auth/me
+- Use the fresh database response to populate user state
+- Update localStorage with fresh data from server
+This ensures avatar_url and nickname are always 
+fresh from the database, not stale from localStorage
+
+The flow:
+const token = localStorage.getItem('ine_token')
+if (token) {
+  const res = await fetch('/api/auth/me', {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  if (res.ok) {
+    const data = await res.json()
+    setUser(data.user) // fresh from DB
+    localStorage.setItem('ine_user', 
+      JSON.stringify(data.user)) // update cache
+  } else {
+    // Token expired - clear and redirect to login
+    localStorage.removeItem('ine_token')
+    localStorage.removeItem('ine_user')
+    navigate('/login')
+  }
+}
+
+3. After avatar upload (Settings page):
+When POST /api/user/avatar succeeds:
+const updatedUser = data.user // from API response
+// Update React state
+setUser(updatedUser)
+// Update localStorage cache
+localStorage.setItem('ine_user', 
+  JSON.stringify(updatedUser))
+// Show success toast
+showToast('✅ Profile photo saved!')
+
+Do NOT just update a local state variable.
+The setUser must update the global auth context
+so the avatar appears in the dashboard header too.
+
+4. After saving profile (name/nickname):
+When PATCH /api/user succeeds:
+const updatedUser = data.user // from API response
+setUser(updatedUser)
+localStorage.setItem('ine_user', 
+  JSON.stringify(updatedUser))
+showToast('✅ Profile updated!')
+
+5. Settings page on mount:
+When Settings page loads, always fetch fresh 
+user data from GET /api/auth/me to pre-fill 
+the form fields. Do not rely on stale localStorage.
+
+useEffect(() => {
+  const fetchFreshUser = async () => {
+    const res = await fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (res.ok) {
+      const data = await res.json()
+      setUser(data.user)
+      setName(data.user.name || '')
+      setNickname(data.user.nickname || '')
+      localStorage.setItem('ine_user', 
+        JSON.stringify(data.user))
+    }
+  }
+  fetchFreshUser()
+}, [])
+
+═══════════════════════════════════════════════
+AVATAR SIZE FIX
+═══════════════════════════════════════════════
+Base64 images can be very large (1-3MB) which 
+causes two problems:
+1. localStorage has a 5MB limit — large avatars 
+   can crash the app
+2. Slow page loads
+
+Fix by compressing the image before upload:
+
+In the file input onChange handler, before uploading:
+- Create an <img> element and load the file
+- Draw it on a <canvas> at max 200×200 pixels
+- Export canvas as JPEG at 0.7 quality
+- This reduces a 2MB photo to ~20KB
+- Upload the compressed version
+
+Code:
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const MAX = 200
+        let w = img.width, h = img.height
+        if (w > h) {
+          if (w > MAX) { h *= MAX/w; w = MAX }
+        } else {
+          if (h > MAX) { w *= MAX/h; h = MAX }
+        }
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        canvas.toBlob(resolve, 'image/jpeg', 0.7)
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+// In onChange:
+const compressed = await compressImage(file)
+const formData = new FormData()
+formData.append('avatar', compressed, 'avatar.jpg')
+// Then POST to /api/user/avatar
+
+═══════════════════════════════════════════════
+VERIFICATION STEPS
+═══════════════════════════════════════════════
+After fixing:
+1. Upload a profile photo in Settings
+2. Check console confirms UPDATE ran in database
+3. Refresh the page — photo must still be there
+4. Log out completely
+5. Log back in — photo must still be there
+6. Change nickname, save
+7. Log out and log back in — nickname must persist
+8. Check database directly:
+   SELECT id, name, nickname, 
+          CASE WHEN avatar_url IS NOT NULL 
+          THEN 'HAS PHOTO' ELSE 'NO PHOTO' END 
+          as avatar_status
+   FROM users
+   Show me this query result
+
+Rebuild after all fixes:
+cd client && npm run build
+Restart server

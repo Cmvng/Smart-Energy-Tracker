@@ -1,6 +1,28 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 
+function compressImage(file: File): Promise<Blob> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX = 200;
+        let w = img.width, h = img.height;
+        if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } }
+        else { if (h > MAX) { w *= MAX / h; h = MAX; } }
+        canvas.width = Math.round(w);
+        canvas.height = Math.round(h);
+        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => resolve(blob!), "image/jpeg", 0.7);
+      };
+      img.src = e.target!.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const NAVY = "#0A1628";
 const GREEN = "#00D37F";
 const RED = "#FF4757";
@@ -84,6 +106,23 @@ export default function Settings() {
       setProfileNickname(user.nickname ? "@" + user.nickname : "");
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) {
+          setUser(data);
+          setCurrency(data.home_currency ?? "USD");
+          setMode(data.mode ?? "individual");
+          setNotifFreq(data.notification_frequency ?? "daily");
+          setProfileName(data.name ?? "");
+          setProfileNickname(data.nickname ? "@" + data.nickname : "");
+        }
+      })
+      .catch(() => {});
+  }, [token]);
 
   const save = useCallback(async (patch: Record<string, string>) => {
     setSaving(true);
@@ -186,13 +225,10 @@ export default function Settings() {
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      showToast("❌ Image too large. Max 5MB");
-      return;
-    }
-    const formData = new FormData();
-    formData.append("avatar", file);
     try {
+      const compressed = await compressImage(file);
+      const formData = new FormData();
+      formData.append("avatar", compressed, "avatar.jpg");
       const res = await fetch("/api/user/avatar", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -201,7 +237,6 @@ export default function Settings() {
       const data = await res.json();
       if (res.ok) {
         setUser(data.user);
-        localStorage.setItem("ine_user", JSON.stringify(data.user));
         showToast("✅ Profile photo updated!");
       } else {
         showToast("❌ Upload failed", false);

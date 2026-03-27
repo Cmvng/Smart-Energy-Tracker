@@ -30,6 +30,7 @@ router.post("/avatar", requireAuth, upload.single("avatar"), async (req: AuthReq
       .where(eq(usersTable.id, req.userId!))
       .returning();
 
+    console.log(`[avatar] saved for user ${updated.id}: ${updated.avatar_url ? updated.avatar_url.slice(0, 50) + "..." : "null"}, nickname: ${updated.nickname}`);
     res.json({
       user: {
         id: updated.id,
@@ -39,6 +40,7 @@ router.post("/avatar", requireAuth, upload.single("avatar"), async (req: AuthReq
         home_currency: updated.home_currency,
         notification_frequency: updated.notification_frequency,
         avatar_url: updated.avatar_url,
+        nickname: updated.nickname,
         created_at: updated.created_at,
       },
     });
