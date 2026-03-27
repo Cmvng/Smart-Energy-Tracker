@@ -27,3 +27,9 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+JWT_SECRET = "smartINE2024SecretKey99xyz"
+EXCHANGE_RATES_API_KEY = "PLACEHOLDER_REPLACE_ME"

@@ -23,5 +23,7 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  console.log("DB connected:", !!process.env.DATABASE_URL);
+  console.log("JWT_SECRET set:", !!process.env.JWT_SECRET);
   startNotificationCron();
 });
