@@ -1,0 +1,891 @@
+Apply every single fix below in one complete pass. 
+Do not skip anything.
+
+═══════════════════════════════════════════════
+FIX 1 — REMOVE "SEND TEST REMINDER" BUTTON
+═══════════════════════════════════════════════
+Delete the "Send Test Reminder" button from Settings 
+completely. Remove the button, its onClick handler, 
+and the API call. Nobody needs this — it is confusing.
+
+═══════════════════════════════════════════════
+FIX 2 — REMINDER FREQUENCY CONTROLS TELEGRAM
+═══════════════════════════════════════════════
+The Reminders dropdown in Settings (Daily / Every 3 Days / 
+Weekly / Off) must control BOTH email AND Telegram reminders.
+
+When user changes frequency:
+1. Save to users.notification_frequency in database via 
+   PATCH /api/user
+2. Show toast: "✅ Reminder preference saved!"
+3. The Telegram cron jobs must READ this field before 
+   sending — if frequency is 'off' never send to that user
+
+Frequency rules for cron jobs:
+- 'daily' → send every day at 8AM and 8PM UTC
+- 'every3days' → send Monday, Wednesday, Friday only
+- 'weekly' → send Sunday only  
+- 'off' → never send anything
+
+In Settings UI, the Reminders section must show:
+- Label: "Reminder Frequency"
+- Dropdown with options: 
+  Daily | Every 3 Days | Weekly | Off
+- Below dropdown, small grey text that changes based 
+  on selection:
+  Daily → "You'll get a morning and evening check-in daily"
+  Every 3 Days → "Check-ins on Monday, Wednesday & Friday"
+  Weekly → "One check-in every Sunday"
+  Off → "No reminders will be sent"
+- This setting controls both Telegram and email reminders
+
+═══════════════════════════════════════════════
+FIX 3 — TELEGRAM CONNECT (ONE TAP ONLY)
+═══════════════════════════════════════════════
+Settings → Notifications section must show:
+
+IF NOT CONNECTED:
+- Section title: "Telegram Reminders" 
+- Description: "Get fun daily check-ins on Telegram. 
+  Just tap the button and press Start — that's it!"
+- Big green button: "🔔 Setup Telegram Reminders"
+  width: 100%, height: 52px, border-radius: 26px
+  background: #00D37F, color: white, font-size: 15px
+  onClick: window.open(
+    'https://t.me/smartinetracker_bot?start=' + user.id,
+    '_blank'
+  )
+  Below button: grey text "Opens Telegram — just tap Start"
+- After clicking button: start polling GET /api/telegram/status 
+  every 2 seconds for up to 60 seconds
+  When {connected: true} comes back: update UI to show 
+  connected state without page refresh
+
+IF CONNECTED:
+- Green checkmark row: "✅ Telegram Reminders Active"
+- Grey text: "Reminders sent based on your frequency setting"
+- Small red text link: "Disconnect" 
+  onClick: POST /api/telegram/disconnect → update UI
+
+ADD these backend routes if missing:
+GET /api/telegram/status → 
+  { connected: boolean, chat_id: string|null }
+  reads telegram_chat_id from current user in DB
+
+POST /api/telegram/disconnect →
+  SET telegram_chat_id = NULL for current user
+  Return { success: true }
+
+═══════════════════════════════════════════════
+FIX 4 — TELEGRAM BOT ALL COMMANDS WORKING
+═══════════════════════════════════════════════
+Rewrite the entire telegram-bot.ts file from scratch.
+
+The CORRECT database query chain for ALL commands:
+Step 1: const user = await db.query(
+  'SELECT * FROM users WHERE telegram_chat_id = $1', 
+  [chatId]
+)
+Step 2: const account = await db.query(
+  'SELECT * FROM accounts WHERE user_id = $1 LIMIT 1',
+  [user.id]  
+)
+Step 3: query transactions WHERE account_id = account.id
+
+Use this pattern for EVERY command that needs user data.
+
+HELPER FUNCTIONS to create once and reuse:
+
+async function getUserByChatId(chatId) {
+  const result = await db.query(
+    'SELECT * FROM users WHERE telegram_chat_id = $1',
+    [String(chatId)]
+  )
+  return result.rows[0] || null
+}
+
+async function getUserAccount(userId) {
+  const result = await db.query(
+    'SELECT * FROM accounts WHERE user_id = $1 LIMIT 1',
+    [userId]
+  )
+  return result.rows[0] || null
+}
+
+async function getTodaySummary(accountId) {
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const result = await db.query(`
+    SELECT 
+      COALESCE(SUM(CASE WHEN type='income' 
+        THEN amount_usd ELSE 0 END), 0) as income,
+      COALESCE(SUM(CASE WHEN type='expense' 
+        THEN amount_usd ELSE 0 END), 0) as expenses,
+      COUNT(*) as count
+    FROM transactions 
+    WHERE account_id = $1 
+    AND deleted_at IS NULL
+    AND transacted_at >= $2
+  `, [accountId, todayStart])
+  const row = result.rows[0]
+  const income = parseFloat(row.income)
+  const expenses = parseFloat(row.expenses)
+  return { income, expenses, net: income - expenses, 
+           count: parseInt(row.count) }
+}
+
+async function getWeekSummary(accountId) {
+  const weekStart = new Date()
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
+  weekStart.setHours(0, 0, 0, 0)
+  const result = await db.query(`
+    SELECT 
+      COALESCE(SUM(CASE WHEN type='income' 
+        THEN amount_usd ELSE 0 END), 0) as income,
+      COALESCE(SUM(CASE WHEN type='expense' 
+        THEN amount_usd ELSE 0 END), 0) as expenses,
+      COUNT(*) as count
+    FROM transactions 
+    WHERE account_id = $1 
+    AND deleted_at IS NULL
+    AND transacted_at >= $2
+  `, [accountId, weekStart])
+  const row = result.rows[0]
+  const income = parseFloat(row.income)
+  const expenses = parseFloat(row.expenses)
+  return { income, expenses, net: income - expenses,
+           count: parseInt(row.count) }
+}
+
+function formatMoney(n) {
+  return '$' + Math.abs(n).toFixed(2).replace(
+    /\B(?=(\d{3})+(?!\d))/g, ','
+  )
+}
+
+function netEmoji(net) {
+  if (net > 0) return '🟢 Profit'
+  if (net < 0) return '🔴 Loss'
+  return '🟡 Breakeven'
+}
+
+NOT LINKED REPLY (reuse everywhere):
+const NOT_LINKED = 
+`👋 Your Telegram isn't linked yet!
+Open the app → Settings → Setup Telegram Reminders
+Then tap Start here and you're done 🔗
+App: ${process.env.APP_URL}`
+
+UNRECOGNIZED COMMAND REPLY:
+`🤔 I didn't understand that.
+Here's what I can do:
+📊 /summary — today's numbers
+📅 /week — this week
+💰 /add income 5000 NGN note
+💸 /add expense 2000 NGN note
+Or just send me a number like 5000 💡`
+
+ALL COMMANDS:
+
+/start (no parameters):
+bot.onText(/\/start$/, async (msg) => {
+  bot.sendMessage(msg.chat.id, 
+    `👋 Hi! I'm your Smart i-n-E Tracker bot!
+To get started, open the app and tap:
+Settings → Setup Telegram Reminders
+Then come back and press Start on that link 💰
+App: ${process.env.APP_URL}`)
+})
+
+/start [user_id] (from app link):
+bot.onText(/\/start (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id
+  const userId = match[1].trim()
+  try {
+    // Save chat_id to user
+    const result = await db.query(
+      `UPDATE users SET telegram_chat_id = $1 
+       WHERE id = $2 RETURNING *`,
+      [String(chatId), userId]
+    )
+    if (result.rows.length === 0) {
+      bot.sendMessage(chatId, 
+        '❌ Could not find your account. Please try again from the app.')
+      return
+    }
+    const user = result.rows[0]
+    bot.sendMessage(chatId,
+`🎉 You're all set ${user.name}!
+
+I'll send you reminders to track your finances 💰
+
+Here's what I can do:
+📊 /summary — today's numbers
+📅 /week — this week's totals
+💰 /add income 5000 NGN freelance
+💸 /add expense 2000 NGN groceries
+
+Or just send me a number and I'll guide you!
+Your first reminder arrives tonight 🌙`)
+  } catch(e) {
+    console.error('/start error:', e)
+    bot.sendMessage(chatId, 
+      '😅 Something went wrong. Try again from the app.')
+  }
+})
+
+/summary:
+bot.onText(/\/summary/, async (msg) => {
+  const chatId = msg.chat.id
+  try {
+    const user = await getUserByChatId(chatId)
+    if (!user) { bot.sendMessage(chatId, NOT_LINKED); return }
+    const account = await getUserAccount(user.id)
+    if (!account) { 
+      bot.sendMessage(chatId, 
+        '😅 No account found. Please open the app first.')
+      return 
+    }
+    const s = await getTodaySummary(account.id)
+    const today = new Date().toLocaleDateString('en-US', 
+      { weekday:'long', month:'short', day:'numeric' })
+    bot.sendMessage(chatId,
+`📊 Today — ${today}
+━━━━━━━━━━━━━━━
+💚 Income:    ${formatMoney(s.income)}
+❤️ Expenses:  ${formatMoney(s.expenses)}
+━━━━━━━━━━━━━━━
+${netEmoji(s.net)}: ${s.net >= 0 ? '+' : '-'}${formatMoney(s.net)}
+${s.count} transaction${s.count !== 1 ? 's' : ''} logged
+${s.count === 0 ? '\nNothing logged yet today 👀\nTap /add to log something!' : ''}`)
+  } catch(e) {
+    console.error('/summary error:', e)
+    bot.sendMessage(chatId, 
+      '😅 Could not load your summary. Try again!')
+  }
+})
+
+/week:
+bot.onText(/\/week/, async (msg) => {
+  const chatId = msg.chat.id
+  try {
+    const user = await getUserByChatId(chatId)
+    if (!user) { bot.sendMessage(chatId, NOT_LINKED); return }
+    const account = await getUserAccount(user.id)
+    if (!account) {
+      bot.sendMessage(chatId,
+        '😅 No account found. Please open the app first.')
+      return
+    }
+    const s = await getWeekSummary(account.id)
+    bot.sendMessage(chatId,
+`📅 This Week
+━━━━━━━━━━━━━━━
+💚 Income:    ${formatMoney(s.income)}
+❤️ Expenses:  ${formatMoney(s.expenses)}
+━━━━━━━━━━━━━━━
+${netEmoji(s.net)}: ${s.net >= 0 ? '+' : '-'}${formatMoney(s.net)}
+${s.count} transaction${s.count !== 1 ? 's' : ''} this week
+${s.net > 0 ? '\nGreat week! Keep it up 🏆' : s.net < 0 ? '\nTough week. Tomorrow is a new chance 💪' : '\nExactly even — log more income! 😄'}`)
+  } catch(e) {
+    console.error('/week error:', e)
+    bot.sendMessage(chatId, '😅 Could not load weekly data. Try again!')
+  }
+})
+
+/add income [amount] [currency] [note]:
+/add expense [amount] [currency] [note]:
+bot.onText(/\/add (income|expense) (\S+)(?: (\S+))?(?: (.+))?/, 
+async (msg, match) => {
+  const chatId = msg.chat.id
+  const type = match[1]
+  const amountRaw = parseFloat(match[2])
+  const currencyRaw = match[3] ? match[3].toUpperCase() : null
+  const note = match[4] || ''
+  
+  if (isNaN(amountRaw) || amountRaw <= 0) {
+    bot.sendMessage(chatId,
+      `🤔 Invalid amount. Try: /add ${type} 5000 NGN groceries`)
+    return
+  }
+  
+  try {
+    const user = await getUserByChatId(chatId)
+    if (!user) { bot.sendMessage(chatId, NOT_LINKED); return }
+    const account = await getUserAccount(user.id)
+    if (!account) {
+      bot.sendMessage(chatId,
+        '😅 No account found. Please open the app first.')
+      return
+    }
+    
+    // Get currency - use provided or fall back to user home
+    const currency = currencyRaw || user.home_currency || 'USD'
+    const rateResult = await db.query(
+      'SELECT rate_to_usd, name FROM currencies WHERE code = $1',
+      [currency]
+    )
+    const rate = rateResult.rows.length > 0 
+      ? parseFloat(rateResult.rows[0].rate_to_usd) 
+      : 1.0
+    const usedFallback = rateResult.rows.length === 0
+    const amount_usd = amountRaw * rate
+    
+    // Save transaction
+    await db.query(`
+      INSERT INTO transactions 
+        (account_id, type, amount_original, currency_code, 
+         amount_usd, fx_rate_used, notes, transacted_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+    `, [account.id, type, amountRaw, currency, 
+        amount_usd, rate, note])
+    
+    // Get updated today totals
+    const s = await getTodaySummary(account.id)
+    
+    const emoji = type === 'income' ? '💰' : '💸'
+    const typeLabel = type === 'income' ? 'Income' : 'Expense'
+    
+    bot.sendMessage(chatId,
+`✅ ${typeLabel} logged! ${emoji}
+${currency} ${amountRaw.toLocaleString()} = ${formatMoney(amount_usd)} USD
+${usedFallback ? '⚠️ Currency not found, used 1:1 rate\n' : ''}
+━━━━━━━━━━━━━━━
+📊 Today so far:
+💚 Income:   ${formatMoney(s.income)}
+❤️ Expenses: ${formatMoney(s.expenses)}
+${netEmoji(s.net)}: ${s.net >= 0 ? '+' : '-'}${formatMoney(s.net)}
+━━━━━━━━━━━━━━━
+${s.net > 0 
+  ? "You're in profit! 🚀" 
+  : s.net < 0 
+  ? "You're at a loss. Log more income! 💪" 
+  : "Exactly even 🟡"}`)
+  } catch(e) {
+    console.error('/add error:', e)
+    bot.sendMessage(chatId,
+      '😅 Could not save that. Try again!')
+  }
+})
+
+BARE NUMBER HANDLER (user sends just "5000"):
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id
+  const text = msg.text || ''
+  
+  // Skip if it's a command
+  if (text.startsWith('/')) return
+  
+  // Check if it's just a number
+  if (/^\d+(\.\d+)?$/.test(text.trim())) {
+    const amount = parseFloat(text.trim())
+    try {
+      const user = await getUserByChatId(chatId)
+      if (!user) { bot.sendMessage(chatId, NOT_LINKED); return }
+      
+      // Store in session
+      await db.query(`
+        INSERT INTO telegram_sessions 
+          (user_id, state, data, updated_at)
+        VALUES ($1, 'awaiting_type', $2, NOW())
+        ON CONFLICT (user_id) 
+        DO UPDATE SET state='awaiting_type', 
+          data=$2, updated_at=NOW()
+      `, [user.id, JSON.stringify({ amount })])
+      
+      bot.sendMessage(chatId,
+        `Got ${user.home_currency || 'USD'} ${amount.toLocaleString()}! What was this? 👇`,
+        {
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '💰 Income', callback_data: 'type_income' },
+              { text: '💸 Expense', callback_data: 'type_expense' }
+            ]]
+          }
+        }
+      )
+    } catch(e) {
+      console.error('bare number error:', e)
+    }
+    return
+  }
+  
+  // Unknown message that is not a command or number
+  if (!text.startsWith('/')) {
+    const user = await getUserByChatId(chatId)
+    if (!user) { bot.sendMessage(chatId, NOT_LINKED); return }
+    bot.sendMessage(chatId, 
+`🤔 I didn't understand that.
+Try:
+📊 /summary
+💰 /add income 5000 NGN
+💸 /add expense 2000 USD groceries
+Or just send a number like: 5000`)
+  }
+})
+
+CALLBACK QUERY HANDLER (inline button taps):
+bot.on('callback_query', async (query) => {
+  const chatId = query.message.chat.id
+  const data = query.data
+  
+  try {
+    const user = await getUserByChatId(chatId)
+    if (!user) { 
+      bot.answerCallbackQuery(query.id, 
+        { text: 'Please link your account first' })
+      return 
+    }
+    
+    if (data === 'type_income' || data === 'type_expense') {
+      const type = data === 'type_income' ? 'income' : 'expense'
+      
+      // Get amount from session
+      const sessionResult = await db.query(
+        `SELECT data FROM telegram_sessions 
+         WHERE user_id = $1 AND state = 'awaiting_type'`,
+        [user.id]
+      )
+      
+      if (sessionResult.rows.length === 0) {
+        bot.answerCallbackQuery(query.id, 
+          { text: 'Session expired, please try again' })
+        return
+      }
+      
+      const { amount } = sessionResult.rows[0].data
+      const currency = user.home_currency || 'USD'
+      
+      const rateResult = await db.query(
+        'SELECT rate_to_usd FROM currencies WHERE code = $1',
+        [currency]
+      )
+      const rate = rateResult.rows.length > 0 
+        ? parseFloat(rateResult.rows[0].rate_to_usd) : 1.0
+      const amount_usd = amount * rate
+      
+      const account = await getUserAccount(user.id)
+      
+      await db.query(`
+        INSERT INTO transactions
+          (account_id, type, amount_original, currency_code,
+           amount_usd, fx_rate_used, notes, transacted_at)
+        VALUES ($1,$2,$3,$4,$5,$6,'',NOW())
+      `, [account.id, type, amount, currency, amount_usd, rate])
+      
+      // Clear session
+      await db.query(
+        'DELETE FROM telegram_sessions WHERE user_id = $1',
+        [user.id]
+      )
+      
+      const s = await getTodaySummary(account.id)
+      
+      bot.answerCallbackQuery(query.id, { text: '✅ Saved!' })
+      bot.editMessageText(
+`✅ ${type === 'income' ? 'Income' : 'Expense'} saved!
+${currency} ${amount.toLocaleString()} = ${formatMoney(amount_usd)} USD
+
+📊 Today: Income ${formatMoney(s.income)} · Expenses ${formatMoney(s.expenses)}
+${netEmoji(s.net)}: ${s.net >= 0 ? '+' : '-'}${formatMoney(s.net)}`,
+        { 
+          chat_id: chatId, 
+          message_id: query.message.message_id 
+        }
+      )
+    }
+  } catch(e) {
+    console.error('callback error:', e)
+    bot.answerCallbackQuery(query.id, 
+      { text: '😅 Something went wrong' })
+  }
+})
+
+/help command:
+bot.onText(/\/help/, async (msg) => {
+  bot.sendMessage(msg.chat.id,
+`💰 Smart i-n-E Tracker Bot
+
+Here's everything I can do:
+
+📊 /summary — today's income, expenses & profit
+📅 /week — this week's totals
+💰 /add income [amount] [currency] [note]
+   Example: /add income 50000 NGN freelance
+💸 /add expense [amount] [currency] [note]
+   Example: /add expense 5000 NGN groceries
+🔢 Send any number — I'll ask income or expense
+⚙️ /reminders — change reminder schedule
+
+Open the app for charts & full history:
+${process.env.APP_URL}`)
+})
+
+/reminders command:
+bot.onText(/\/reminders/, async (msg) => {
+  const chatId = msg.chat.id
+  try {
+    const user = await getUserByChatId(chatId)
+    if (!user) { bot.sendMessage(chatId, NOT_LINKED); return }
+    
+    bot.sendMessage(chatId,
+      `⚙️ Your current reminder: *${user.notification_frequency || 'daily'}*\n\nChange it:`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '🌅 Daily', callback_data: 'freq_daily' },
+            { text: '📅 Every 3 Days', callback_data: 'freq_every3days' }
+          ],[
+            { text: '📆 Weekly', callback_data: 'freq_weekly' },
+            { text: '🔕 Off', callback_data: 'freq_off' }
+          ]]
+        }
+      }
+    )
+  } catch(e) {
+    console.error('/reminders error:', e)
+    bot.sendMessage(chatId, '😅 Could not load settings. Try again!')
+  }
+})
+
+Handle frequency callback queries (add to existing 
+callback_query handler):
+if (data.startsWith('freq_')) {
+  const freq = data.replace('freq_', '')
+  await db.query(
+    'UPDATE users SET notification_frequency = $1 WHERE id = $2',
+    [freq, user.id]
+  )
+  const labels = {
+    daily: 'every day 🌅',
+    every3days: 'Monday, Wednesday & Friday 📅', 
+    weekly: 'every Sunday 📆',
+    off: 'never 🔕'
+  }
+  bot.answerCallbackQuery(query.id, { text: '✅ Saved!' })
+  bot.editMessageText(
+    `✅ Got it! I'll remind you ${labels[freq]}`,
+    { chat_id: chatId, message_id: query.message.message_id }
+  )
+}
+
+SCHEDULED REMINDERS - rewrite cron jobs:
+import cron from 'node-cron'
+
+// Morning: 8AM UTC daily
+cron.schedule('0 8 * * *', async () => {
+  try {
+    const users = await db.query(`
+      SELECT * FROM users 
+      WHERE telegram_chat_id IS NOT NULL 
+      AND notification_frequency != 'off'
+    `)
+    const dayOfWeek = new Date().getDay() // 0=Sun,1=Mon...
+    
+    for (const user of users.rows) {
+      const freq = user.notification_frequency
+      // Check if should send today
+      const shouldSend = 
+        freq === 'daily' ||
+        (freq === 'every3days' && [1,3,5].includes(dayOfWeek)) ||
+        (freq === 'weekly' && dayOfWeek === 0)
+      
+      if (!shouldSend) continue
+      
+      try {
+        const account = await getUserAccount(user.id)
+        if (!account) continue
+        
+        // Get yesterday summary
+        const yesterday = new Date()
+        yesterday.setDate(yesterday.getDate() - 1)
+        yesterday.setHours(0,0,0,0)
+        const yesterdayEnd = new Date(yesterday)
+        yesterdayEnd.setHours(23,59,59,999)
+        
+        const yResult = await db.query(`
+          SELECT 
+            COALESCE(SUM(CASE WHEN type='income' 
+              THEN amount_usd ELSE 0 END),0) as income,
+            COALESCE(SUM(CASE WHEN type='expense' 
+              THEN amount_usd ELSE 0 END),0) as expenses
+          FROM transactions
+          WHERE account_id=$1 
+          AND deleted_at IS NULL
+          AND transacted_at BETWEEN $2 AND $3
+        `, [account.id, yesterday, yesterdayEnd])
+        
+        const yi = parseFloat(yResult.rows[0].income)
+        const ye = parseFloat(yResult.rows[0].expenses)
+        const ynet = yi - ye
+        
+        let yesterdayLine = ''
+        if (yi > 0 || ye > 0) {
+          yesterdayLine = ynet > 0 
+            ? `Yesterday you made ${formatMoney(ynet)} profit 🔥 Beat it today!`
+            : `Yesterday was tough 💪 Today is a fresh start!`
+        }
+        
+        await bot.sendMessage(user.telegram_chat_id,
+`🌅 Good morning ${user.name}!
+${yesterdayLine ? '\n' + yesterdayLine + '\n' : ''}
+New day, new money moves 💪
+Ready to track today? 👇`,
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '💰 Log Income', callback_data: 'quick_income' },
+                { text: '💸 Log Expense', callback_data: 'quick_expense' }
+              ],[
+                { text: '📊 Yesterday Summary', callback_data: 'summary_yesterday' }
+              ]]
+            }
+          }
+        )
+      } catch(e) {
+        console.error(`Morning reminder error for ${user.id}:`, e)
+      }
+    }
+  } catch(e) {
+    console.error('Morning cron error:', e)
+  }
+})
+
+// Evening: 8PM UTC daily  
+cron.schedule('0 20 * * *', async () => {
+  try {
+    const users = await db.query(`
+      SELECT * FROM users 
+      WHERE telegram_chat_id IS NOT NULL 
+      AND notification_frequency != 'off'
+    `)
+    const dayOfWeek = new Date().getDay()
+    
+    for (const user of users.rows) {
+      const freq = user.notification_frequency
+      const shouldSend = 
+        freq === 'daily' ||
+        (freq === 'every3days' && [1,3,5].includes(dayOfWeek)) ||
+        (freq === 'weekly' && dayOfWeek === 0)
+      
+      if (!shouldSend) continue
+      
+      try {
+        const account = await getUserAccount(user.id)
+        if (!account) continue
+        const s = await getTodaySummary(account.id)
+        
+        const hasLogged = s.count > 0
+        
+        await bot.sendMessage(user.telegram_chat_id,
+hasLogged 
+? `🌙 Evening check-in ${user.name}!
+
+Today so far:
+💚 Income: ${formatMoney(s.income)}
+❤️ Expenses: ${formatMoney(s.expenses)}
+${netEmoji(s.net)}: ${s.net >= 0 ? '+' : '-'}${formatMoney(s.net)}
+
+Anything else to add? 👇`
+: `🌙 Hey ${user.name}! 👀
+
+You haven't logged anything today yet...
+Don't let the day go undocumented! 
+
+Quick log 👇`,
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '💰 Add Income', callback_data: 'quick_income' },
+                { text: '💸 Add Expense', callback_data: 'quick_expense' }
+              ],[
+                { text: '✅ All done today', callback_data: 'done_today' }
+              ]]
+            }
+          }
+        )
+      } catch(e) {
+        console.error(`Evening reminder error for ${user.id}:`, e)
+      }
+    }
+  } catch(e) {
+    console.error('Evening cron error:', e)
+  }
+})
+
+Handle quick_income, quick_expense, done_today callbacks:
+- quick_income: bot asks "How much income? Send amount + currency e.g. 5000 NGN"
+  Set session state to 'awaiting_income_amount'
+- quick_expense: same but 'awaiting_expense_amount'  
+- done_today: show today's final summary + "Rest well 🌙💰"
+
+═══════════════════════════════════════════════
+FIX 5 — DASHBOARD MOBILE OVERFLOW
+═══════════════════════════════════════════════
+Fix horizontal scroll on mobile dashboard:
+
+Global CSS:
+* { box-sizing: border-box }
+body { overflow-x: hidden; max-width: 100vw }
+
+Summary cards container:
+display: grid
+grid-template-columns: repeat(3, 1fr)
+gap: 8px
+width: 100%
+
+Each card:
+min-width: 0
+padding: 10px 8px on mobile
+overflow: hidden
+
+On screens ≤ 360px:
+grid-template-columns: 1fr (stack vertically)
+
+Timeframe tabs:
+display: grid
+grid-template-columns: repeat(4, 1fr)
+width: 100%
+Each tab: padding 8px 4px, font-size 13px
+
+Transaction rows:
+display: flex
+justify-content: space-between  
+overflow: hidden
+Each row max-width: 100%
+Description: flex:1, overflow:hidden, 
+  text-overflow:ellipsis, white-space:nowrap
+Amount: flex-shrink:0, max-width:45%
+
+Analytics charts:
+<ResponsiveContainer width="100%" height={220}>
+Never use fixed pixel widths on charts
+
+All pages:
+padding-bottom: 80px on mobile (above bottom nav)
+padding-left: 12px, padding-right: 12px
+
+Bottom nav bar:
+position: fixed
+bottom: 0, left: 0, right: 0
+height: 64px
+padding-bottom: env(safe-area-inset-bottom)
+z-index: 100
+background: white
+border-top: 1px solid #eee
+
+All inputs: font-size minimum 16px (stops iOS zoom)
+All buttons: minimum height 44px
+
+═══════════════════════════════════════════════
+FIX 6 — PROFILE PHOTO UPLOAD
+═══════════════════════════════════════════════
+DATABASE: 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS 
+  avatar_url text;
+
+BACKEND:
+Install multer: npm install multer
+POST /api/user/avatar:
+- Accept multipart/form-data, field: 'avatar'
+- Validate: image only, max 5MB
+- Read as buffer, convert to base64 data URL:
+  const b64 = `data:${file.mimetype};base64,${buffer.toString('base64')}`
+- UPDATE users SET avatar_url = b64 WHERE id = [user.id]
+- Return updated user
+
+FRONTEND Settings page - profile section:
+<div style={{position:'relative', width:90, height:90, 
+  margin:'0 auto 16px', cursor:'pointer'}}
+  onClick={() => fileInputRef.current?.click()}>
+  
+  {user.avatar_url 
+    ? <img src={user.avatar_url} 
+        style={{width:90,height:90,borderRadius:'50%',
+          objectFit:'cover'}} />
+    : <div style={{width:90,height:90,borderRadius:'50%',
+        background:'#0A1628',display:'flex',
+        alignItems:'center',justifyContent:'center',
+        color:'white',fontSize:28,fontWeight:600}}>
+        {user.name?.[0]?.toUpperCase()}
+      </div>
+  }
+  
+  <div style={{position:'absolute',bottom:0,right:0,
+    width:28,height:28,borderRadius:'50%',
+    background:'#00D37F',display:'flex',
+    alignItems:'center',justifyContent:'center',
+    fontSize:14}}>
+    📷
+  </div>
+</div>
+
+<div style={{textAlign:'center',marginBottom:20}}>
+  <div style={{fontWeight:600,fontSize:18}}>
+    @{user.name?.toLowerCase().replace(/\s+/g,'')}
+  </div>
+  <div style={{color:'#888',fontSize:13,marginTop:4}}>
+    {user.email}
+  </div>
+</div>
+
+<input type="file" accept="image/*" 
+  ref={fileInputRef} style={{display:'none'}}
+  onChange={async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('❌ Image too large. Max 5MB')
+      return
+    }
+    const formData = new FormData()
+    formData.append('avatar', file)
+    const res = await fetch('/api/user/avatar', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData
+    })
+    const data = await res.json()
+    if (res.ok) {
+      updateUser(data.user)
+      localStorage.setItem('ine_user', JSON.stringify(data.user))
+      showToast('✅ Profile photo updated!')
+    } else {
+      showToast('❌ Upload failed')
+    }
+  }}
+/>
+
+Show avatar in dashboard header (top right):
+Small 36px circle, same logic — photo if exists, 
+initials if not.
+
+═══════════════════════════════════════════════
+FIX 7 — LANDING PAGE FRESH FOR ALL USERS
+═══════════════════════════════════════════════
+Change localStorage key to 'ine_landing_v4' everywhere.
+
+Root route in App.tsx:
+function RootRedirect() {
+  const token = localStorage.getItem('ine_token')
+  const seen = localStorage.getItem('ine_landing_v4')
+  if (token) return <Navigate to="/dashboard" replace />
+  if (seen) return <Navigate to="/login" replace />
+  return <LandingPage />
+}
+
+Landing page buttons:
+onClick for both buttons:
+  localStorage.setItem('ine_landing_v4', 'true')
+  navigate('/register') // or /login
+
+═══════════════════════════════════════════════
+FINAL STEPS
+═══════════════════════════════════════════════
+After all fixes:
+1. cd client && npm run build
+2. Restart server
+3. Confirm "✅ Telegram bot is live!" in logs
+4. Confirm app loads at cmvsmarttracker.replit.app
+5. List every fix successfully applied

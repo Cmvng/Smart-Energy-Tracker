@@ -118,6 +118,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
       mode: user.mode,
       home_currency: user.home_currency,
       notification_frequency: user.notification_frequency,
+      avatar_url: user.avatar_url,
       created_at: user.created_at,
     });
   } catch (err) {

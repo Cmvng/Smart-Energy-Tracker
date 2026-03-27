@@ -11,6 +11,7 @@ export interface UserProfile {
   mode: string;
   home_currency: string;
   notification_frequency?: string;
+  avatar_url?: string;
   created_at?: string;
 }
 

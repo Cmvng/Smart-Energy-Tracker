@@ -1,0 +1,279 @@
+Add these three new features to the Smart i-n-E Tracker.
+Do not break any existing functionality.
+
+═══════════════════════════════════════════════
+FEATURE 1 — NICKNAME ON REGISTER + PROFILE PHOTO
+═══════════════════════════════════════════════
+
+DATABASE:
+ALTER TABLE users ADD COLUMN IF NOT EXISTS 
+  nickname text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS 
+  avatar_url text;
+
+REGISTER PAGE - add nickname field:
+- Add a "Nickname" input field between Name and Email
+- Placeholder: "How should we call you? e.g. @moneyking"
+- Optional field (not required)
+- Automatically add @ prefix if user doesn't type it
+- Save to users.nickname column on register
+- Show below the name field with label "Nickname (optional)"
+- Small hint text: "This is how you'll appear in the app"
+
+LOGIN PAGE - no changes needed
+
+BACKEND:
+- POST /api/auth/register: accept nickname field, 
+  strip @ if present then store as lowercase no spaces
+  e.g. "Money King" → stored as "moneyking"
+  Display always with @ prefix in the UI
+- GET /api/auth/me: include nickname and avatar_url 
+  in response
+- PATCH /api/user: accept nickname and avatar_url updates
+
+POST /api/user/avatar:
+- Install multer if not installed: npm install multer
+- Accept multipart/form-data, field name: 'avatar'
+- Validate: images only (jpg/png/gif/webp), max 5MB
+- Convert to base64 data URL:
+  `data:${mimetype};base64,${buffer.toString('base64')}`
+- Save to users.avatar_url
+- Return { user: updatedUser }
+
+SETTINGS PAGE - Profile section (full rebuild):
+
+Large centered profile section at top of Settings:
+
+Avatar circle (90px × 90px, position relative):
+- If avatar_url exists: show <img> rounded, object-fit cover
+- If no avatar: show initials circle, background #0A1628, 
+  white text, font-size 32px
+- Camera overlay button (bottom-right of circle):
+  28px green circle, 📷 emoji, position absolute
+  Clicking anywhere on avatar OR camera icon triggers 
+  hidden file input
+- Show loading spinner overlay while uploading
+
+Below avatar:
+- Display name: user.name in bold 20px
+- Nickname: "@{user.nickname}" in green #00D37F, 
+  font-size 15px, margin-top 4px
+  If no nickname: show "Add a nickname →" in grey, 
+  tappable to edit
+- Email in grey 13px
+- Mode badge (INDIVIDUAL / BUSINESS)
+
+Editable fields below profile photo:
+- "Display Name" input (pre-filled with user.name)
+- "Nickname" input (pre-filled with @nickname, 
+  auto-strips @ before saving)
+- "Save Changes" green button
+  onClick: PATCH /api/user with {name, nickname}
+  Show toast "✅ Profile updated!"
+
+File input (hidden):
+- accept="image/*"
+- onChange: validate size (max 5MB), 
+  POST to /api/user/avatar with FormData
+- On success: update user in React state AND localStorage
+- Toast: "✅ Profile photo updated! 🎉"
+- Error: "❌ Too large! Max size is 5MB"
+
+Show avatar in dashboard header:
+- Top-right corner, 38px circle
+- If avatar: show photo
+- If no avatar: show initials
+- Tapping it goes to Settings
+
+═══════════════════════════════════════════════
+FEATURE 2 — SHAREABLE STATS CARD
+═══════════════════════════════════════════════
+
+Install: npm install html2canvas
+
+Add a new "Share Stats" button in two places:
+1. Dashboard page — below the summary cards
+2. Analytics page — below the charts
+Button style: outlined navy border, white background,
+  "📤 Share My Stats" text, full width on mobile
+
+SHARE STATS MODAL:
+Opens as a centered modal (same pattern as Quick Add).
+Contains two sections:
+
+SECTION A — Card Customization:
+
+1. Time Range selector:
+   - "Today" | "This Week" | "This Month" | "Custom"
+   - When "Custom" selected: show two date pickers
+     From: [date input] To: [date input]
+   - Selecting any option fetches fresh data from API:
+     GET /api/transactions/summary?timeframe=custom
+     &from=[date]&to=[date]
+     (add this custom range support to the summary endpoint)
+
+2. Theme selector (4 options shown as small preview swatches):
+   - Dark Navy: background #0A1628, text white
+   - Pure White: background white, text #0A1628, 
+     border 1px solid #eee
+   - Profit Green: background #00D37F, text white
+   - Midnight Purple: background #1a0533, text white
+   Each swatch is a 48px × 32px rounded rectangle 
+   showing the color. Selected one has a green checkmark.
+
+3. "Preview Card" button → generates and shows the card
+
+SECTION B — Card Preview:
+Shows the generated card in real time below the options.
+
+THE STATS CARD DESIGN (generated as HTML div, 
+then screenshot with html2canvas):
+
+Card size: 400px × 500px (portrait, like Instagram story)
+The card changes based on selected theme.
+
+CARD LAYOUT:
+
+Top section (padding 28px):
+- App logo: small green circle + "Smart i-n-E Tracker" 
+  in 13px — top left
+- Time period label top right: 
+  "Today" / "This Week" / "Mar 1–27, 2026" etc.
+  font-size 12px, opacity 0.7
+
+Hero number (center, padding-top 20px):
+- Label: "Net Profit" or "Net Loss" in 14px uppercase 
+  letter-spacing 2px, opacity 0.7
+- Amount: "+$1,250.00" or "-$340.00" in 52px bold
+  Color: always bright green if profit, 
+         bright red/coral if loss,
+         regardless of card theme
+- Status emoji below: 🟢 if profit, 🔴 if loss, 
+  🟡 if breakeven — 32px
+
+Divider line: 1px, opacity 0.15, margin 20px 0
+
+Stats grid (2×2):
+┌─────────────────┬─────────────────┐
+│  💚 Income      │  ❤️ Expenses     │
+│  $2,450.00      │  $1,200.00      │
+├─────────────────┼─────────────────┤
+│  📊 Transactions│  📈 Daily Avg   │
+│  24 logged      │  $89.28/day     │
+└─────────────────┴─────────────────┘
+Each cell: label in 11px opacity 0.6, 
+           value in 18px bold
+
+Bottom section:
+- User's avatar (32px circle) + "@nickname" or name
+  left-aligned
+- "tracked with Smart i-n-E" right-aligned, 
+  font-size 11px, opacity 0.5
+- If profit: motivational line centered above footer:
+  "Crushing it! 💪" or "On a roll! 🔥" or 
+  "Profit mode activated 🚀" (random from array)
+- If loss: encouraging line:
+  "Every day is a new chance 💪" or 
+  "Track it. Fix it. Win it 🎯"
+
+SHARING OPTIONS (below the preview card):
+
+Row of action buttons:
+
+1. "⬇️ Download" button:
+   - Uses html2canvas to screenshot the card div
+   - Downloads as: "smart-ine-[period]-[date].png"
+   - Show loading state while generating
+   - Toast: "✅ Card saved to your device!"
+
+2. "𝕏 Share on X" button (black background, white text):
+   - Generate the image with html2canvas
+   - Create tweet text:
+     "My finances this [period]: 
+     💚 Income: $X
+     ❤️ Expenses: $X  
+     [🟢/🔴] Net: [+/-]$X
+     Tracked with Smart i-n-E Tracker
+     [APP_URL] #SmartINE #FinanceTracker #MoneyMoves"
+   - Open: https://twitter.com/intent/tweet?text=[encoded text]
+   - Note: Twitter/X doesn't allow auto image attach 
+     via web intent, so show user a message:
+     "Card downloaded! Tweet opens next — 
+      attach your downloaded card to the tweet 📎"
+   - First download the image, then open the tweet URL
+
+3. "📱 Share" button (uses Web Share API):
+   - Convert canvas to blob
+   - Use navigator.share({ 
+       title: 'My Finance Stats',
+       text: tweet text,
+       files: [imageFile]
+     })
+   - This allows sharing to WhatsApp, Instagram, 
+     any app on phone
+   - Only show this button if navigator.share is available
+     (hide on desktop if not supported)
+   - Fallback if not supported: show "Copy Text" button
+     that copies the tweet text to clipboard
+
+BACKEND - update summary endpoint:
+GET /api/transactions/summary now accepts:
+- ?timeframe=day|week|month|year (existing)
+- ?from=2026-01-01&to=2026-03-27 (new custom range)
+
+When from+to params present:
+SELECT 
+  COALESCE(SUM(CASE WHEN type='income' 
+    THEN amount_usd ELSE 0 END),0) as income,
+  COALESCE(SUM(CASE WHEN type='expense' 
+    THEN amount_usd ELSE 0 END),0) as expenses,
+  COUNT(*) as count
+FROM transactions
+WHERE account_id = [user account id]
+AND deleted_at IS NULL
+AND transacted_at >= [from date 00:00:00]
+AND transacted_at <= [to date 23:59:59]
+
+Also calculate daily_avg = net / number of days in range
+
+Return same shape as existing summary response plus:
+{ daily_avg, days_in_range, from_date, to_date }
+
+═══════════════════════════════════════════════
+FEATURE 3 — NICKNAME DISPLAY EVERYWHERE
+═══════════════════════════════════════════════
+
+Wherever the user's name appears in the app, 
+show nickname if it exists, otherwise show name:
+
+function displayName(user) {
+  return user.nickname 
+    ? '@' + user.nickname 
+    : user.name
+}
+
+Apply this to:
+- Dashboard header greeting: 
+  "Good morning, @moneyking! 👋"
+- Settings profile section
+- The stats card
+- Telegram bot messages (already uses user.name, 
+  update to use nickname if set)
+
+In Telegram bot, update greeting:
+const greetName = user.nickname 
+  ? '@' + user.nickname 
+  : user.name
+
+═══════════════════════════════════════════════
+FINAL STEPS
+═══════════════════════════════════════════════
+After building everything:
+1. cd client && npm run build
+2. Restart server
+3. Confirm app loads at cmvsmarttracker.replit.app
+4. List every feature successfully added
+5. Confirm html2canvas is installed and working
+6. Confirm /api/user/avatar endpoint accepts uploads
+7. Confirm /api/transactions/summary accepts 
+   custom date ranges

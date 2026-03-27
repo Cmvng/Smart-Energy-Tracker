@@ -41,6 +41,7 @@ router.patch("/", requireAuth, async (req: AuthRequest, res: Response) => {
       mode: updated.mode,
       home_currency: updated.home_currency,
       notification_frequency: updated.notification_frequency,
+      avatar_url: updated.avatar_url,
       created_at: updated.created_at,
     });
   } catch (err) {

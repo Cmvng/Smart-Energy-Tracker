@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 
 const NAVY = "#0A1628";
@@ -11,6 +11,13 @@ const NOTIF_OPTIONS = [
   { value: "weekly", label: "Weekly" },
   { value: "off", label: "Off" },
 ];
+
+const NOTIF_DESCRIPTIONS: Record<string, string> = {
+  daily: "You'll get a morning and evening check-in daily",
+  every_3_days: "Check-ins on Monday, Wednesday & Friday",
+  weekly: "One check-in every Sunday",
+  off: "No reminders will be sent",
+};
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -32,6 +39,7 @@ function Row({ label, children, last = false }: { label: string; children: React
 
 export default function Settings() {
   const { user, token, logout, setUser } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [currencies, setCurrencies] = useState<any[]>([]);
   const [currency, setCurrency] = useState(user?.home_currency ?? "USD");
@@ -40,7 +48,6 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState({ msg: "", ok: true });
   const [refreshing, setRefreshing] = useState(false);
-  const [testing, setTesting] = useState(false);
 
   const [tgConnected, setTgConnected] = useState(false);
   const [tgDisconnecting, setTgDisconnecting] = useState(false);
@@ -84,7 +91,7 @@ export default function Settings() {
       if (res.ok) {
         const updated = await res.json();
         setUser(updated);
-        showToast("✅ Saved");
+        showToast("✅ Reminder preference saved!");
       } else {
         showToast("❌ Could not save", false);
       }
@@ -125,27 +132,13 @@ export default function Settings() {
     }
   };
 
-  const handleTestReminder = async () => {
-    setTesting(true);
-    try {
-      const res = await fetch("/api/notifications/test", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) showToast("✅ Test reminder sent");
-      else showToast("❌ Failed to send", false);
-    } catch {
-      showToast("❌ Connection error", false);
-    } finally {
-      setTesting(false);
-    }
-  };
-
   const handleActivateTelegram = () => {
     if (!user?.id) return;
-    const url = `https://t.me/smartinetracker_bot?start=${user.id}`;
-    window.open(url, "_blank");
+    window.open(`https://t.me/smartinetracker_bot?start=${user.id}`, "_blank");
 
     setTgPolling(true);
     let attempts = 0;
-    const maxAttempts = 20;
+    const maxAttempts = 30;
     const interval = setInterval(async () => {
       attempts++;
       try {
@@ -165,7 +158,7 @@ export default function Settings() {
         setTgPolling(false);
         clearInterval(interval);
       }
-    }, 3000);
+    }, 2000);
   };
 
   const handleDisconnectTelegram = async () => {
@@ -185,6 +178,35 @@ export default function Settings() {
     }
   };
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("❌ Image too large. Max 5MB");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("avatar", file);
+    try {
+      const res = await fetch("/api/user/avatar", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUser(data.user);
+        localStorage.setItem("ine_user", JSON.stringify(data.user));
+        showToast("✅ Profile photo updated!");
+      } else {
+        showToast("❌ Upload failed", false);
+      }
+    } catch {
+      showToast("❌ Upload failed", false);
+    }
+    e.target.value = "";
+  };
+
   const initials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : "U";
@@ -197,24 +219,56 @@ export default function Settings() {
       </div>
 
       <div className="px-4 mt-5">
-        {/* Profile card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-5 flex items-center gap-4">
+        {/* Profile card with avatar upload */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-5">
           <div
-            className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl flex-shrink-0"
-            style={{ background: NAVY }}
+            style={{ position: "relative", width: 90, height: 90, margin: "0 auto 16px", cursor: "pointer" }}
+            onClick={() => fileInputRef.current?.click()}
           >
-            {initials}
+            {user?.avatar_url ? (
+              <img
+                src={user.avatar_url}
+                alt="Profile"
+                style={{ width: 90, height: 90, borderRadius: "50%", objectFit: "cover" }}
+              />
+            ) : (
+              <div style={{
+                width: 90, height: 90, borderRadius: "50%", background: NAVY,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "white", fontSize: 28, fontWeight: 600,
+              }}>
+                {initials}
+              </div>
+            )}
+            <div style={{
+              position: "absolute", bottom: 0, right: 0, width: 28, height: 28,
+              borderRadius: "50%", background: GREEN, display: "flex",
+              alignItems: "center", justifyContent: "center", fontSize: 14,
+            }}>
+              📷
+            </div>
           </div>
-          <div>
-            <p className="font-bold text-gray-900 text-base">{user?.name}</p>
-            <p className="text-sm text-gray-500">{user?.email}</p>
+
+          <div style={{ textAlign: "center", marginBottom: 4 }}>
+            <div style={{ fontWeight: 600, fontSize: 18 }}>
+              @{user?.name?.toLowerCase().replace(/\s+/g, "")}
+            </div>
+            <div style={{ color: "#888", fontSize: 13, marginTop: 4 }}>{user?.email}</div>
             <span
-              className="inline-block mt-1 text-xs font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider"
+              className="inline-block mt-2 text-xs font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider"
               style={{ background: `${GREEN}20`, color: "#00A860" }}
             >
               {user?.mode}
             </span>
           </div>
+
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            style={{ display: "none" }}
+            onChange={handleAvatarChange}
+          />
         </div>
 
         <Section title="Preferences">
@@ -231,38 +285,50 @@ export default function Settings() {
               ))}
             </select>
           </Row>
-          <Row label="Mode">
+          <Row label="Mode" last>
             <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
               {(["individual", "business"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => { setMode(m); save({ mode: m }); }}
-                  className="px-3 py-1 rounded-md text-xs font-semibold capitalize transition-all"
-                  style={{
-                    background: mode === m ? NAVY : "transparent",
-                    color: mode === m ? "white" : "#9CA3AF",
-                  }}
+                  className="px-3 py-1 rounded-md text-xs font-semibold capitalize transition-all min-h-[44px]"
+                  style={{ background: mode === m ? NAVY : "transparent", color: mode === m ? "white" : "#9CA3AF" }}
                 >
                   {m}
                 </button>
               ))}
             </div>
           </Row>
-          <Row label="Reminders" last>
-            <select
-              value={notifFreq}
-              onChange={(e) => { setNotifFreq(e.target.value); save({ notification_frequency: e.target.value }); }}
-              disabled={saving}
-              className="text-sm font-semibold bg-transparent border-none outline-none cursor-pointer"
-              style={{ color: NAVY }}
-            >
-              {NOTIF_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </Row>
         </Section>
 
+        {/* Reminder Frequency — controls email + Telegram */}
+        <div className="mb-5">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">Reminder Frequency</p>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-4 py-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Reminder Frequency</label>
+              <select
+                value={notifFreq}
+                onChange={(e) => {
+                  setNotifFreq(e.target.value);
+                  save({ notification_frequency: e.target.value });
+                }}
+                disabled={saving}
+                className="w-full text-sm font-semibold rounded-xl border border-gray-200 px-3 py-2.5 outline-none cursor-pointer"
+                style={{ color: NAVY, fontSize: 16, minHeight: 44 }}
+              >
+                {NOTIF_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <p className="text-xs text-gray-400 mt-2">
+                {NOTIF_DESCRIPTIONS[notifFreq] ?? ""}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">This setting controls both Telegram and email reminders</p>
+            </div>
+          </div>
+        </div>
+
         <Section title="Data">
-          <button onClick={handleCsvDownload} className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50 active:bg-gray-50 transition-colors text-left">
+          <button onClick={handleCsvDownload} className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50 active:bg-gray-50 transition-colors text-left min-h-[52px]">
             <span className="text-lg">📥</span>
             <span className="text-sm font-medium text-gray-700">Download CSV</span>
             <span className="ml-auto text-gray-400">›</span>
@@ -270,61 +336,64 @@ export default function Settings() {
           <button
             onClick={handleRefreshRates}
             disabled={refreshing}
-            className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50 active:bg-gray-50 transition-colors text-left disabled:opacity-60"
+            className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 active:bg-gray-50 transition-colors text-left disabled:opacity-60 min-h-[52px]"
           >
             <span className="text-lg">{refreshing ? "⏳" : "🔄"}</span>
             <span className="text-sm font-medium text-gray-700">Refresh Exchange Rates</span>
             <span className="ml-auto text-gray-400">›</span>
           </button>
-          <button
-            onClick={handleTestReminder}
-            disabled={testing}
-            className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 active:bg-gray-50 transition-colors text-left disabled:opacity-60"
-          >
-            <span className="text-lg">{testing ? "⏳" : "🔔"}</span>
-            <span className="text-sm font-medium text-gray-700">Send Test Reminder</span>
-            <span className="ml-auto text-gray-400">›</span>
-          </button>
         </Section>
 
-        <Section title="Telegram Notifications">
-          {tgConnected ? (
-            <div className="px-4 py-4">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xl">✅</span>
-                <span className="text-sm font-semibold text-gray-800">Telegram Active — you'll get daily reminders</span>
+        {/* Telegram Reminders */}
+        <div className="mb-5">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">Telegram Reminders</p>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            {tgConnected ? (
+              <div className="px-4 py-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xl">✅</span>
+                  <span className="text-sm font-semibold text-gray-800">Telegram Reminders Active</span>
+                </div>
+                <p className="text-xs text-gray-400 mb-4">Reminders sent based on your frequency setting</p>
+                <button
+                  onClick={handleDisconnectTelegram}
+                  disabled={tgDisconnecting}
+                  className="text-xs font-semibold transition-colors disabled:opacity-60"
+                  style={{ color: RED }}
+                >
+                  {tgDisconnecting ? "Disconnecting…" : "Disconnect"}
+                </button>
               </div>
-              <p className="text-xs text-gray-400 mb-4">Log transactions and check your finances directly in Telegram.</p>
-              <button
-                onClick={handleDisconnectTelegram}
-                disabled={tgDisconnecting}
-                className="text-xs font-semibold transition-colors disabled:opacity-60"
-                style={{ color: RED }}
-              >
-                {tgDisconnecting ? "Disconnecting…" : "Disconnect"}
-              </button>
-            </div>
-          ) : (
-            <div className="px-4 py-4">
-              <button
-                onClick={handleActivateTelegram}
-                disabled={tgPolling}
-                className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-70"
-                style={{ background: GREEN }}
-              >
-                {tgPolling ? "⏳ Waiting for Telegram…" : "🔔 Activate Telegram Notifications"}
-              </button>
-              <p className="text-xs text-gray-400 text-center mt-2">
-                {tgPolling ? "Tap Start in Telegram, then come back here" : "Opens Telegram — just tap Start"}
-              </p>
-            </div>
-          )}
-        </Section>
+            ) : (
+              <div className="px-4 py-4">
+                <p className="text-sm text-gray-600 mb-4">
+                  Get fun daily check-ins on Telegram. Just tap the button and press Start — that's it!
+                </p>
+                <button
+                  onClick={handleActivateTelegram}
+                  disabled={tgPolling}
+                  style={{
+                    width: "100%", height: 52, borderRadius: 26,
+                    background: tgPolling ? "#9CA3AF" : GREEN,
+                    color: "white", fontSize: 15, fontWeight: 700,
+                    border: "none", cursor: tgPolling ? "default" : "pointer",
+                    transition: "background 0.2s",
+                  }}
+                >
+                  {tgPolling ? "⏳ Waiting for Telegram…" : "🔔 Setup Telegram Reminders"}
+                </button>
+                <p className="text-xs text-gray-400 text-center mt-2">
+                  {tgPolling ? "Tap Start in Telegram, then come back here" : "Opens Telegram — just tap Start"}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
 
         <Section title="Account">
           <button
             onClick={logout}
-            className="w-full flex items-center gap-3 px-4 py-3.5 active:bg-red-50 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3.5 active:bg-red-50 transition-colors min-h-[52px]"
           >
             <span className="text-lg">🚪</span>
             <span className="text-sm font-semibold" style={{ color: RED }}>Log Out</span>
@@ -334,7 +403,6 @@ export default function Settings() {
         <p className="text-center text-xs text-gray-400 mt-2 mb-4">Smart i-n-E Tracker · v1.0</p>
       </div>
 
-      {/* Toast */}
       {toast.msg && (
         <div
           className="fixed bottom-24 left-1/2 -translate-x-1/2 px-5 py-3 rounded-2xl text-sm font-semibold z-50 shadow-xl max-w-[340px] text-center text-white"

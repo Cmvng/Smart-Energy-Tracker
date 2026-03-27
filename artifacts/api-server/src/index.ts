@@ -2,8 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startNotificationCron } from "./jobs/notificationCron";
 import { seedCurrencies, seedDemoUser } from "./jobs/seed";
-import { startTelegramBot, sendMorningReminders, sendEveningReminders } from "./telegram-bot";
-import cron from "node-cron";
+import { startTelegramBot, startTelegramCrons } from "./telegram-bot";
 
 const rawPort = process.env["PORT"];
 
@@ -31,8 +30,5 @@ app.listen(port, async (err) => {
   await seedDemoUser();
   startNotificationCron();
   startTelegramBot();
-
-  cron.schedule("0 8 * * *", () => { sendMorningReminders().catch((e) => logger.error({ e }, "Morning cron error")); });
-  cron.schedule("0 20 * * *", () => { sendEveningReminders().catch((e) => logger.error({ e }, "Evening cron error")); });
-  logger.info("Telegram reminder crons scheduled (8am + 8pm UTC)");
+  startTelegramCrons();
 });

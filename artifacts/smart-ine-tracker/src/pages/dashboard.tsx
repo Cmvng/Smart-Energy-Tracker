@@ -118,10 +118,12 @@ export default function Dashboard() {
               </span>
               <button
                 onClick={() => navigate("/settings")}
-                className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm"
+                className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm overflow-hidden"
                 style={{ background: "rgba(255,255,255,0.15)" }}
               >
-                {initials}
+                {user?.avatar_url
+                  ? <img src={user.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                  : initials}
               </button>
             </div>
           </div>
@@ -177,8 +179,8 @@ export default function Dashboard() {
       >
         <div className="md:max-w-[1100px] md:w-full md:mx-auto md:px-8">
 
-          {/* Summary Cards — mobile: horizontal scroll, desktop: 3-col grid */}
-          <div className="flex gap-3 overflow-x-auto pb-2 px-5 pt-5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] md:overflow-x-visible md:grid md:grid-cols-3 md:gap-4 md:px-0 md:pt-6 md:pb-0">
+          {/* Summary Cards — 3-col grid on all sizes */}
+          <div className="grid grid-cols-3 gap-2 px-3 pt-5 w-full md:gap-4 md:px-0 md:pt-6">
             <SummaryCard
               title="Total Income"
               amount={summary?.total_income_usd}
@@ -312,17 +314,17 @@ function SummaryCard({
   title: string; amount?: number; color: string; loading: boolean; prefix?: string; sub?: string;
 }) {
   return (
-    <div className="min-w-[150px] flex-1 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-1 md:min-w-0">
-      <span className="text-xs font-semibold text-gray-500">{title}</span>
+    <div className="min-w-0 overflow-hidden bg-white p-2.5 md:p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-1">
+      <span className="text-[10px] md:text-xs font-semibold text-gray-500 truncate">{title}</span>
       {loading ? (
-        <div className="h-8 bg-gray-100 rounded-lg animate-pulse w-28 mt-1" />
+        <div className="h-6 bg-gray-100 rounded-lg animate-pulse w-full mt-1" />
       ) : (
-        <span className="text-xl font-bold md:text-2xl" style={{ color }}>
+        <span className="text-sm md:text-2xl font-bold truncate" style={{ color }}>
           {prefix}${fmt(Math.abs(amount ?? 0))}
         </span>
       )}
       {sub && !loading && (
-        <span className="text-xs text-gray-400 mt-0.5">{sub}</span>
+        <span className="text-[9px] md:text-xs text-gray-400 mt-0.5 truncate">{sub}</span>
       )}
     </div>
   );

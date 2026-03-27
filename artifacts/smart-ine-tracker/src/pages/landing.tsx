@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 const NAVY = "#0A1628";
 const NAVY2 = "#0d2040";
 const GREEN = "#00D37F";
-const VISITED_KEY = "ine_visited";
+const VISITED_KEY = "ine_landing_v4";
 
 export function hasVisited() {
   return localStorage.getItem(VISITED_KEY) === "true";
