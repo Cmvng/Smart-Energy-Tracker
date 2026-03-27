@@ -1,0 +1,40 @@
+Now add the core transaction features to the Smart i-n-E Tracker app.
+
+BACKEND — add these API routes (all require JWT auth middleware):
+
+1. GET /api/currencies — return all currencies from DB with current rates
+2. POST /api/currencies/refresh — fetch live rates from Open Exchange Rates API (key stored in env as EXCHANGE_RATES_API_KEY), update the currencies table, return updated count. Use this URL: https://openexchangerates.org/api/latest.json?app_id=YOUR_KEY&base=USD
+3. POST /api/transactions — create a transaction:
+   - Accept: { account_id, type, amount_original, currency_code, notes, transacted_at }
+   - Fetch the current rate for currency_code from the currencies table
+   - Calculate amount_usd = amount_original * rate_to_usd
+   - Store fx_rate_used
+   - Return the full transaction object
+4. GET /api/transactions — return paginated transactions for the user's accounts, support query params: ?timeframe=day|week|month|year&type=income|expense&limit=50&offset=0
+5. DELETE /api/transactions/:id — soft delete (add deleted_at column)
+6. GET /api/transactions/summary — return aggregated data:
+   - total_income_usd, total_expense_usd, net_usd, transaction_count
+   - Support ?timeframe=day|week|month|year (default: day)
+   - Also return: income_rate_per_hour, expense_rate_per_hour (divide by elapsed hours in the timeframe)
+   - Return profit_status: 'profit' | 'breakeven' | 'loss'
+
+FRONTEND — build these screens:
+
+1. /dashboard — Home Dashboard (mobile-first, max-width 430px):
+   - Top bar: app name left, mode toggle (Individual/Business) right, user avatar
+   - Timeframe tabs: Day | Week | Month | Year (sticky below top bar)
+   - Summary cards row: Income (green), Expenses (red), Net P&L (green or red depending on value)
+   - Insight banner: show the income_rate_per_hour or expense_rate_per_hour as plain English e.g. "You're spending $2.40/hour today" or "Profit: +$45.00 this week"
+   - Transaction list below: each item shows type icon, notes/label, original amount + currency, USD equivalent, time
+   - Floating Action Button (FAB): large green "+" button fixed bottom-right
+
+2. /add — Quick Add Sheet (or a modal that slides up):
+   - Toggle: Income (green) | Expense (red) — large tap targets
+   - Amount input: large numeric keyboard-friendly input
+   - Currency selector: searchable dropdown showing all 30 currencies
+   - Notes field: optional, single line
+   - Date/time: defaults to now, tappable to change
+   - "Save" button: full width, green
+   - On save: call POST /api/transactions, show success animation, return to dashboard
+
+Connect the dashboard to real data from the API. Show loading states and empty states (e.g. "No transactions yet — tap + to add your first one").

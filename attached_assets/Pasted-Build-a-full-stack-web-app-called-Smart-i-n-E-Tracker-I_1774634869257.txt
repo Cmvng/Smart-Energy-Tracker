@@ -1,0 +1,34 @@
+Build a full-stack web app called "Smart i-n-E Tracker" (Income & Expense Tracker). Use React + Vite for the frontend, Node.js + Express for the backend, and PostgreSQL for the database (use Replit's built-in database or pg module).
+
+Set up the complete project structure:
+
+BACKEND (server/):
+- Express server on port 3001
+- PostgreSQL connection using the DATABASE_URL environment variable
+- JWT authentication (jsonwebtoken + bcryptjs)
+- CORS configured for the frontend
+
+DATABASE SCHEMA — create all these tables:
+1. users: id (uuid), email, password_hash, name, mode (individual/business), home_currency (default 'USD'), created_at
+2. accounts: id (uuid), user_id (FK), type (individual/business), label, created_at
+3. transactions: id (uuid), account_id (FK), type (income/expense), amount_original (decimal), currency_code, amount_usd (decimal), fx_rate_used (decimal), notes, transacted_at, synced (boolean default true), created_at
+4. currencies: code (varchar PK), name, rate_to_usd (decimal), rate_updated_at
+5. analytics_snapshots: id (uuid), user_id (FK), timeframe (day/week/month/year), total_income_usd, total_expense_usd, net_usd, period_start, period_end
+
+AUTH ROUTES:
+- POST /api/auth/register — create user + default account, return JWT
+- POST /api/auth/login — validate credentials, return JWT
+- GET /api/auth/me — return current user (requires auth middleware)
+
+FRONTEND (client/):
+- React + Vite + React Router
+- Two pages for now: /login and /register
+- Clean mobile-first design, max-width 430px centered, white background
+- Login form: email + password + submit button
+- Register form: name + email + password + mode selector (Individual / Business) + home currency dropdown (USD, EUR, GBP, NGN, KES, GHS, ZAR, INR, CAD, AUD) + submit
+- On successful login/register, save JWT to localStorage and redirect to /dashboard (placeholder page for now that just says "Dashboard coming in Phase 2")
+- Use a fintech-inspired color scheme: deep navy (#0A1628) for headers, bright green (#00D37F) for income/profit, coral red (#FF4757) for expenses/loss, white cards on light gray background (#F5F6FA)
+
+Seed the currencies table with at least 30 common currencies and placeholder rates (we will update them via API later). Include: USD (1.0), EUR, GBP, NGN, KES, GHS, ZAR, INR, CAD, AUD, JPY, CNY, BRL, MXN, AED, SAR, PKR, BDT, EGP, TZS, UGX, ZMW, RWF, XOF, XAF, GYD, TTD, BBD, JMD, CHF.
+
+Make sure the app runs with a single "npm run dev" or similar command. Confirm everything works — register a test user and show me the success response.

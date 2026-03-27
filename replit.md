@@ -15,25 +15,52 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Auth**: JWT (jsonwebtoken) + bcryptjs
+
+## Application: Smart i-n-E Tracker
+
+A full-stack Income & Expense Tracker app with:
+- **Frontend**: React + Vite, mobile-first (max 430px), fintech color scheme
+  - Deep navy (#0A1628) headers
+  - Bright green (#00D37F) for income
+  - Coral red (#FF4757) for expenses
+  - Light gray (#F5F6FA) page background
+- **Auth pages**: /login and /register
+- **Dashboard**: Placeholder at /dashboard (Phase 2)
 
 ## Structure
 
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server (port auto-assigned)
+│   └── smart-ine-tracker/  # React + Vite frontend (at /)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   └── db/                 # Drizzle ORM schema + DB connection
 ├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
+├── pnpm-workspace.yaml     # pnpm workspace
+├── tsconfig.base.json      # Shared TS options
 ├── tsconfig.json           # Root TS project references
 └── package.json            # Root package with hoisted devDeps
 ```
+
+## Database Schema
+
+1. **users** — id (uuid), email, password_hash, name, mode (individual/business), home_currency, created_at
+2. **accounts** — id (uuid), user_id (FK), type, label, created_at
+3. **transactions** — id (uuid), account_id (FK), type (income/expense), amount_original, currency_code, amount_usd, fx_rate_used, notes, transacted_at, synced, created_at
+4. **currencies** — code (PK), name, rate_to_usd, rate_updated_at (seeded with 30 currencies)
+5. **analytics_snapshots** — id (uuid), user_id (FK), timeframe, total_income_usd, total_expense_usd, net_usd, period_start, period_end
+
+## API Routes
+
+- `GET /api/healthz` — Health check
+- `POST /api/auth/register` — Register user + create default account, returns JWT
+- `POST /api/auth/login` — Validate credentials, returns JWT
+- `GET /api/auth/me` — Get current user (requires Bearer token)
 
 ## TypeScript & Composite Projects
 
@@ -56,41 +83,24 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
 
 - Entry: `src/index.ts` — reads `PORT`, starts Express
 - App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/auth.ts` handles auth
+- Auth: `src/middlewares/auth.ts` — JWT creation and `requireAuth` middleware
+- Depends on: `@workspace/db`, `@workspace/api-zod`, `jsonwebtoken`, `bcryptjs`
+
+### `artifacts/smart-ine-tracker` (`@workspace/smart-ine-tracker`)
+
+React + Vite frontend. Mobile-first (max-width 430px). Uses React Router for routing.
+
+- Pages: `/login`, `/register`, `/dashboard`
+- Auth context in `src/lib/auth.tsx`
+- Depends on: `@workspace/api-client-react`, `react-hook-form`, `@hookform/resolvers`, `framer-motion`
 
 ### `lib/db` (`@workspace/db`)
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
+Database layer using Drizzle ORM with PostgreSQL.
 
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+- `pnpm --filter @workspace/db run push` — push schema changes to DB
 
 ### `lib/api-spec` (`@workspace/api-spec`)
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+Owns the OpenAPI 3.1 spec. Run codegen: `pnpm --filter @workspace/api-spec run codegen`

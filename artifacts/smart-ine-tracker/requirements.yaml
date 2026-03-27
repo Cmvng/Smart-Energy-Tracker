@@ -1,0 +1,13 @@
+packages:
+  "framer-motion": "For fluid page transitions and touch-friendly interactive animations"
+  "react-hook-form": "For robust form state management"
+  "@hookform/resolvers": "For connecting Zod validation schemas to forms"
+  "clsx": "For conditional class merging"
+  "tailwind-merge": "For safely merging Tailwind utility classes without conflicts"
+
+images: []
+
+notes:
+  - "JWT token is stored in localStorage under the key 'token'"
+  - "The app uses a strict 430px max-width container to enforce mobile-first dimensions on desktop screens"
+  - "Auth headers are injected into the generated Orval hooks via the request options"
