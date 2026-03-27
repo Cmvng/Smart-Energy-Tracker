@@ -109,11 +109,6 @@ export default function Login() {
           </Link>
         </p>
 
-        <div className="mt-4 p-3 bg-[#00D37F]/10 rounded-xl">
-          <p className="text-xs text-center text-gray-600 font-medium">
-            Demo: <span className="font-mono font-bold">demo@ine.app</span> / <span className="font-mono font-bold">Demo1234!</span>
-          </p>
-        </div>
       </div>
     </div>
   );
