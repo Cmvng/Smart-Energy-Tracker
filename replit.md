@@ -21,24 +21,44 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 A full-stack mobile-first (max 430px) Income & Expense Tracker with JWT auth, multi-currency FX conversion, analytics, and settings.
 
-**Demo credentials:** `demo@smartine.app` / `demo1234`
+**Demo credentials:** `demo@ine.app` / `Demo1234!`
 
 ### Color Scheme
 - Deep navy `#0A1628` — headers/active nav
 - Bright green `#00D37F` — income
 - Coral red `#FF4757` — expenses
-- Light gray `#F7F8FA` — page backgrounds
+- Light gray `#F5F6FA` — page backgrounds
 
 ### Frontend Pages
-- `/login` — JWT login form
-- `/register` — User registration
-- `/dashboard` — Timeframe tabs (Today/Week/Month/Year), income/expense/net cards, insight banner, transaction list, FAB "+" button
-- `/add` — Add income/expense transaction with currency selector (30 currencies), FX conversion
-- `/analytics` — 30-day bar chart (recharts), 7d/30d/3mo timeframe tabs, smart insight cards, quick stats
-- `/settings` — User profile, home currency, individual/business mode, notification frequency, CSV export, exchange rate refresh, logout
+- `/login` — JWT login form with demo credentials hint
+- `/register` — User registration with mode (individual/business) and home currency selection
+- `/dashboard` — Timeframe tabs (Today/Week/Month/Year), income/expense/net cards, smart insight banner, grouped transaction list, FAB "+" button triggers inline bottom sheet
+- `/analytics` — 7d/30d bar chart (recharts), net P&L line chart, smart insight cards, stats row
+- `/settings` — User profile, home currency, individual/business mode, notification frequency, CSV export, exchange rate refresh, test reminder, logout
 
 ### Bottom Navigation
 Persistent across all protected pages: Home | Add | Analytics | Settings
+- "Add" tab triggers the Quick Add bottom sheet (no separate route)
+
+### Quick Add Bottom Sheet
+- Triggered by FAB button or "Add" tab in bottom nav
+- Inline bottom sheet modal (not a separate route)
+- Income/expense toggle, amount input, currency selector with live FX preview, notes, date/time
+- Shows success toast then auto-closes after 1.5 seconds
+
+### Onboarding (4 screens)
+- Screen 1: Welcome/branding
+- Screen 2: Individual/Business mode selection
+- Screen 3: Home currency selector with search
+- Screen 4: Notification preference + completion
+- Stored in `localStorage` as `ine_onboarding_done`
+
+## Auth & localStorage Keys
+
+- Token key: `ine_token` (JWT, 7-day expiry)
+- User key: `ine_user` (JSON stringified user profile)
+- Onboarding key: `ine_onboarding_done`
+- API client auth configured via `setAuthTokenGetter(() => localStorage.getItem("ine_token"))` in `main.tsx`
 
 ## Structure
 
@@ -49,7 +69,7 @@ artifacts-monorepo/
 │   └── smart-ine-tracker/  # React + Vite frontend (at /)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
+│   ├── api-client-react/   # Generated React Query hooks + setAuthTokenGetter
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   └── db/                 # Drizzle ORM schema + DB connection
 ├── scripts/                # Utility scripts (single workspace package)
@@ -64,38 +84,48 @@ artifacts-monorepo/
 1. **users** — id (uuid), email, password_hash, name, mode (individual/business), home_currency, notification_frequency, created_at
 2. **accounts** — id (uuid), user_id (FK), type, label, created_at
 3. **transactions** — id (uuid), account_id (FK), type (income/expense), amount_original, currency_code, amount_usd, fx_rate_used, notes, transacted_at, deleted_at, synced, created_at
-4. **currencies** — code (PK), name, rate_to_usd, rate_updated_at (seeded with 30 currencies)
+4. **currencies** — code (PK), name, rate_to_usd, rate_updated_at (seeded with 20 currencies)
 5. **analytics_snapshots** — id (uuid), user_id (FK), timeframe, total_income_usd, total_expense_usd, net_usd, period_start, period_end
 
-**FX conversion:** `rate_to_usd` stores units of foreign currency per 1 USD. To convert to USD: `amount_usd = amount_original / rate_to_usd`.
+**FX conversion:** `rate_to_usd` is the value of 1 unit of the currency in USD (e.g., EUR=0.92 means 1 EUR = $0.92 USD).
+Formula: `amount_usd = amount_original * rate_to_usd`
 
 ## API Routes
 
 ### Auth
 - `GET /api/healthz` — Health check
-- `POST /api/auth/register` — Register user + create default account, returns JWT + account_id
-- `POST /api/auth/login` — Validate credentials, returns JWT + account_id
+- `POST /api/auth/register` — Register user + create default account, returns JWT + user
+- `POST /api/auth/login` — Validate credentials, returns JWT + user
 - `GET /api/auth/me` — Get current user (requires Bearer token)
 
 ### User
 - `PATCH /api/user` — Update home_currency, mode, notification_frequency
 
 ### Currencies
-- `GET /api/currencies` — List all 30 currencies with rates
-- `POST /api/currencies/refresh` — Fetch live rates (requires EXCHANGE_RATES_API_KEY env var)
+- `GET /api/currencies` — List all currencies with rates (20 seeded)
+- `POST /api/currencies/refresh` — Fetch live rates from openexchangerates.org (requires EXCHANGE_RATES_API_KEY)
 
 ### Transactions
-- `POST /api/transactions` — Create transaction with FX conversion
-- `GET /api/transactions` — Paginated list with ?timeframe=day|week|month|year&type=income|expense
-- `GET /api/transactions/summary` — Income/expense/net summary for a timeframe
+- `POST /api/transactions` — Create transaction (auto-detects user's account, FX conversion)
+- `GET /api/transactions` — Flat array list with ?timeframe=day|week|month|year
+- `GET /api/transactions/summary` — Income/expense/net/insight_message summary for a timeframe
 - `DELETE /api/transactions/:id` — Soft delete
 
 ### Analytics
-- `GET /api/analytics/chart?days=30` — Daily P&L chart data for the last N days
-- `GET /api/analytics/insights` — 3+ plain-English insights (spending rate, best day, week trend, loss streak)
+- `GET /api/analytics/chart?days=7|30` — Daily P&L chart data
+- `GET /api/analytics/insights` — Smart plain-English insights
 
 ### Export
 - `GET /api/export/csv` — Download all transactions as CSV file
+
+### Notifications
+- `POST /api/notifications/test` — Send a test reminder notification
+
+## Seed Data
+
+On startup (`index.ts`), the API server automatically:
+1. Seeds 20 currencies (with correct `rate_to_usd` values using `onConflictDoUpdate`)
+2. Creates demo user `demo@ine.app` / `Demo1234!` with 10 sample transactions (if not exists)
 
 ## TypeScript & Composite Projects
 
@@ -114,7 +144,8 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 
 ## Important Notes
 
-- Never use `import { z } from "zod"` in `artifacts/api-server` — zod is not a direct dependency. Validate manually or use the workspace catalog.
-- Auth endpoints return `account_id` in the user object so the frontend can store it in `localStorage` for transaction creation.
-- `account_id` is stored in `localStorage` as `"account_id"` after login/register.
-- JWT token stored in `localStorage` as `"token"`, 7-day expiry.
+- Never use `import { z } from "zod"` in `artifacts/api-server` — zod is not a direct dependency.
+- Auth endpoints return `user` (not `account_id`) in the response; `account_id` is no longer stored in localStorage.
+- API auto-detects the user's account from JWT on every transaction create.
+- Trust proxy is set to 1 for rate limiting to work correctly behind Replit's proxy.
+- Rate limiting: 100 requests per 15 minutes on `/api/*` routes.

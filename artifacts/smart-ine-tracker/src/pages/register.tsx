@@ -1,210 +1,154 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { motion } from "framer-motion";
-import { Wallet, UserPlus, Loader2, ArrowLeft } from "lucide-react";
-
-import { useRegisterUser } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
-import { useToast } from "@/hooks/use-toast";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { SelectNative } from "@/components/ui/select-native";
-
-const CURRENCIES = ["USD", "EUR", "GBP", "NGN", "KES", "GHS", "ZAR", "INR", "CAD", "AUD"];
-
-const registerSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  mode: z.enum(["individual", "business"]),
-  home_currency: z.string().min(3, "Currency is required"),
-});
-
-type RegisterFormValues = z.infer<typeof registerSchema>;
+const CURRENCIES = [
+  { code: "USD", name: "US Dollar" }, { code: "EUR", name: "Euro" }, { code: "GBP", name: "British Pound" },
+  { code: "NGN", name: "Nigerian Naira" }, { code: "KES", name: "Kenyan Shilling" }, { code: "GHS", name: "Ghanaian Cedi" },
+  { code: "ZAR", name: "South African Rand" }, { code: "INR", name: "Indian Rupee" }, { code: "CAD", name: "Canadian Dollar" },
+  { code: "AUD", name: "Australian Dollar" }, { code: "JPY", name: "Japanese Yen" }, { code: "CNY", name: "Chinese Yuan" },
+  { code: "CHF", name: "Swiss Franc" }, { code: "AED", name: "UAE Dirham" }, { code: "SAR", name: "Saudi Riyal" },
+];
 
 export default function Register() {
   const [, setLocation] = useLocation();
-  const { setToken } = useAuth();
-  const { toast } = useToast();
-  
-  const registerMutation = useRegisterUser();
+  const { setToken, setUser } = useAuth();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"individual" | "business">("individual");
+  const [currency, setCurrency] = useState("USD");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const {
-    register: formRegister,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-    watch
-  } = useForm<RegisterFormValues>({
-    resolver: zodResolver(registerSchema),
-    defaultValues: {
-      mode: "individual",
-      home_currency: "USD"
-    }
-  });
-
-  const selectedMode = watch("mode");
-
-  const onSubmit = async (data: RegisterFormValues) => {
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    setLoading(true);
     try {
-      const response = await registerMutation.mutateAsync({ data });
-      setToken(response.token);
-      if ((response.user as any)?.account_id) {
-        localStorage.setItem("account_id", (response.user as any).account_id);
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, mode, home_currency: currency }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message || "Could not create account. Please try again.");
+        return;
       }
-      toast({
-        title: "Account Created!",
-        description: "Welcome to Smart i-n-E Tracker.",
-      });
+      setToken(data.token);
+      setUser(data.user);
       setLocation("/dashboard");
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Registration failed",
-        description: error?.message || "Could not create account. Please try again.",
-      });
+    } catch {
+      setError("Connection error. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col min-h-screen pb-10">
-      {/* Decorative Header Area */}
-      <div className="bg-primary pt-8 pb-20 px-6 rounded-b-[2.5rem] relative overflow-hidden shrink-0">
-        <div className="absolute top-[-20%] left-[-20%] w-64 h-64 bg-secondary/10 rounded-full blur-3xl" />
-        
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Link href="/login" className="inline-flex items-center text-primary-foreground/80 hover:text-white mb-6 transition-colors">
-            <ArrowLeft className="w-5 h-5 mr-1" />
-            <span className="text-sm font-semibold">Back</span>
-          </Link>
-        </motion.div>
-        
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="relative z-10"
-        >
-          <h2 className="text-3xl font-display font-bold text-white mb-2">Create Account</h2>
-          <p className="text-primary-foreground/70 text-sm">Join us to take control of your financial journey.</p>
-        </motion.div>
+    <div className="min-h-screen flex flex-col bg-[#F5F6FA]">
+      <div className="bg-[#0A1628] px-6 pt-12 pb-20 relative overflow-hidden">
+        <div className="absolute -bottom-10 -right-10 w-40 h-40 rounded-full bg-white/5" />
+        <Link href="/login" className="inline-flex items-center text-white/70 hover:text-white mb-8 text-sm font-medium">
+          ← Back to Login
+        </Link>
+        <h1 className="text-white text-3xl font-bold mb-2">Create account</h1>
+        <p className="text-white/60 text-sm">Start tracking your income and expenses</p>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 px-6 -mt-10 relative z-20">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="bg-card rounded-3xl p-6 shadow-xl shadow-black/5 border border-border"
-        >
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              <label className={`
-                flex flex-col items-center justify-center p-3 rounded-2xl border-2 cursor-pointer transition-all duration-200
-                ${selectedMode === 'individual' ? 'border-primary bg-primary/5' : 'border-border bg-transparent hover:border-primary/30'}
-              `}>
-                <input type="radio" value="individual" className="sr-only" {...formRegister("mode")} />
-                <span className={`text-sm font-bold ${selectedMode === 'individual' ? 'text-primary' : 'text-muted-foreground'}`}>Individual</span>
-              </label>
-              <label className={`
-                flex flex-col items-center justify-center p-3 rounded-2xl border-2 cursor-pointer transition-all duration-200
-                ${selectedMode === 'business' ? 'border-primary bg-primary/5' : 'border-border bg-transparent hover:border-primary/30'}
-              `}>
-                <input type="radio" value="business" className="sr-only" {...formRegister("mode")} />
-                <span className={`text-sm font-bold ${selectedMode === 'business' ? 'text-primary' : 'text-muted-foreground'}`}>Business</span>
-              </label>
+      <div className="flex-1 px-6 -mt-8 relative z-10 pb-8">
+        <div className="bg-white rounded-3xl p-6 shadow-xl shadow-black/5 border border-gray-100">
+          <form onSubmit={onSubmit} className="space-y-4">
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-medium">
+                {error}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              {(["individual", "business"] as const).map((m) => (
+                <button
+                  type="button"
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={`py-3 rounded-xl border-2 text-sm font-bold capitalize transition-all ${
+                    mode === m
+                      ? "border-[#0A1628] bg-[#0A1628] text-white"
+                      : "border-gray-200 text-gray-500 bg-gray-50"
+                  }`}
+                >
+                  {m === "individual" ? "👤 Individual" : "🏢 Business"}
+                </button>
+              ))}
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground block ml-1">Full Name</label>
-              <Input
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Full Name</label>
+              <input
                 type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 placeholder="John Doe"
-                {...formRegister("name")}
-                className={errors.name ? "border-destructive focus-visible:ring-destructive/10" : ""}
+                required
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#0A1628] focus:ring-2 focus:ring-[#0A1628]/10 transition-all"
               />
-              {errors.name && (
-                <p className="text-xs text-destructive font-medium ml-1">{errors.name.message}</p>
-              )}
             </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground block ml-1">Email Address</label>
-              <Input
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email Address</label>
+              <input
                 type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                {...formRegister("email")}
-                className={errors.email ? "border-destructive focus-visible:ring-destructive/10" : ""}
+                required
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#0A1628] focus:ring-2 focus:ring-[#0A1628]/10 transition-all"
               />
-              {errors.email && (
-                <p className="text-xs text-destructive font-medium ml-1">{errors.email.message}</p>
-              )}
             </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground block ml-1">Password</label>
-              <Input
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Password</label>
+              <input
                 type="password"
-                placeholder="Min 6 characters"
-                {...formRegister("password")}
-                className={errors.password ? "border-destructive focus-visible:ring-destructive/10" : ""}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                required
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#0A1628] focus:ring-2 focus:ring-[#0A1628]/10 transition-all"
               />
-              {errors.password && (
-                <p className="text-xs text-destructive font-medium ml-1">{errors.password.message}</p>
-              )}
             </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground block ml-1">Home Currency</label>
-              <SelectNative {...formRegister("home_currency")}>
-                {CURRENCIES.map(c => (
-                  <option key={c} value={c}>{c}</option>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Home Currency</label>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#0A1628] transition-all"
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
                 ))}
-              </SelectNative>
-              {errors.home_currency && (
-                <p className="text-xs text-destructive font-medium ml-1">{errors.home_currency.message}</p>
-              )}
+              </select>
             </div>
-
-            <Button 
-              type="submit" 
-              className="w-full mt-4" 
-              disabled={isSubmitting}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-[#00D37F] text-white font-bold py-3.5 rounded-xl text-sm transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
             >
-              {isSubmitting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
-                <>
-                  <UserPlus className="w-5 h-5 mr-2" />
-                  Create Account
-                </>
+                "Create Account →"
               )}
-            </Button>
+            </button>
           </form>
-        </motion.div>
+        </div>
 
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          className="mt-8 text-center"
-        >
-          <p className="text-sm text-muted-foreground font-medium">
-            Already have an account?{" "}
-            <Link href="/login" className="text-primary font-bold hover:underline">
-              Sign In
-            </Link>
-          </p>
-        </motion.div>
+        <p className="text-center text-sm text-gray-500 mt-6">
+          Already have an account?{" "}
+          <Link href="/login" className="text-[#0A1628] font-bold hover:underline">
+            Sign In
+          </Link>
+        </p>
       </div>
     </div>
   );

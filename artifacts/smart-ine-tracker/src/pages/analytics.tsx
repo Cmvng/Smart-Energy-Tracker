@@ -1,44 +1,18 @@
-import { useState } from "react";
-import { useGetAnalyticsChart, useGetAnalyticsInsights } from "@workspace/api-client-react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line,
 } from "recharts";
 import { format, parseISO } from "date-fns";
 
-const TIMEFRAMES = [
-  { label: "7 days", days: 7 },
-  { label: "30 days", days: 30 },
-  { label: "3 months", days: 90 },
-];
+const NAVY = "#0A1628";
+const GREEN = "#00D37F";
+const RED = "#FF4757";
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+  return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
-
-const ICON_MAP: Record<string, string> = {
-  "trend-up": "📈",
-  "trend-down": "📉",
-  calendar: "📅",
-  alert: "⚠️",
-};
-
-const ICON_BG: Record<string, string> = {
-  "trend-up": "bg-emerald-50 border-emerald-200",
-  "trend-down": "bg-red-50 border-red-200",
-  calendar: "bg-amber-50 border-amber-200",
-  alert: "bg-red-50 border-red-200",
-};
-
-const ICON_TEXT: Record<string, string> = {
-  "trend-up": "text-emerald-700",
-  "trend-down": "text-red-700",
-  calendar: "text-amber-700",
-  alert: "text-red-700",
-};
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
@@ -49,7 +23,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         </p>
         {payload.map((p: any) => (
           <div key={p.name} className="flex items-center gap-2 mb-1">
-            <span className="w-2 h-2 rounded-full" style={{ background: p.fill }} />
+            <span className="w-2 h-2 rounded-full" style={{ background: p.stroke || p.fill }} />
             <span className="text-gray-600 capitalize">{p.name}:</span>
             <span className="font-semibold text-gray-900">${fmt(p.value)}</span>
           </div>
@@ -62,45 +36,69 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function Analytics() {
   const { token } = useAuth();
-  const [selectedDays, setSelectedDays] = useState(30);
+  const [selectedDays, setSelectedDays] = useState(7);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [insights, setInsights] = useState<any[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [insightsLoading, setInsightsLoading] = useState(false);
 
-  const { data: chartData = [], isLoading: chartLoading } = useGetAnalyticsChart(
-    { days: selectedDays },
-    { query: { enabled: !!token } }
-  );
+  const loadChart = useCallback(async () => {
+    if (!token) return;
+    setChartLoading(true);
+    try {
+      const res = await fetch(`/api/analytics/chart?days=${selectedDays}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setChartData(await res.json());
+    } catch {}
+    finally { setChartLoading(false); }
+  }, [token, selectedDays]);
 
-  const { data: insights = [], isLoading: insightsLoading } = useGetAnalyticsInsights({
-    query: { enabled: !!token },
-  });
+  const loadInsights = useCallback(async () => {
+    if (!token) return;
+    setInsightsLoading(true);
+    try {
+      const res = await fetch("/api/analytics/insights", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setInsights(await res.json());
+    } catch {}
+    finally { setInsightsLoading(false); }
+  }, [token]);
 
-  const xTickFormatter = (val: string) => {
+  useEffect(() => { loadChart(); }, [loadChart]);
+  useEffect(() => { loadInsights(); }, [loadInsights]);
+
+  const xTickFmt = (val: string) => {
     try {
       const d = parseISO(val);
       return selectedDays <= 7 ? format(d, "EEE") : format(d, "MMM d");
-    } catch {
-      return val;
-    }
+    } catch { return val; }
   };
 
-  const interval = selectedDays <= 7 ? 0 : selectedDays <= 30 ? 5 : 14;
+  const interval = selectedDays <= 7 ? 0 : selectedDays <= 30 ? 4 : 13;
+  const totalIncome = chartData.reduce((s, d) => s + d.income_usd, 0);
+  const totalExpense = chartData.reduce((s, d) => s + d.expense_usd, 0);
+  const net = totalIncome - totalExpense;
+
+  const toneStyle = (tone: string) => {
+    if (tone === "positive") return { bar: GREEN, bg: `${GREEN}12`, text: "#00A860" };
+    if (tone === "warning") return { bar: RED, bg: `${RED}12`, text: "#CC2232" };
+    return { bar: "#F59E0B", bg: "#FEF3C712", text: "#92400E" };
+  };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F7F8FA] pb-24">
-      {/* Header */}
-      <div className="bg-[#0A1628] text-white px-6 pt-12 pb-8">
+    <div className="flex flex-col min-h-screen pb-24" style={{ background: "#F5F6FA" }}>
+      <div style={{ background: NAVY }} className="text-white px-5 pt-12 pb-6">
         <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
-        <p className="text-white/60 text-sm mt-1">Your financial overview</p>
-
-        {/* Timeframe tabs */}
-        <div className="flex gap-2 mt-5 bg-white/10 rounded-xl p-1">
-          {TIMEFRAMES.map(({ label, days }) => (
+        <p className="text-white/60 text-sm mt-0.5">Your financial overview</p>
+        <div className="flex gap-2 mt-4 bg-white/10 rounded-xl p-1">
+          {[{ label: "7 days", days: 7 }, { label: "30 days", days: 30 }].map(({ label, days }) => (
             <button
               key={days}
               onClick={() => setSelectedDays(days)}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                selectedDays === days
-                  ? "bg-white text-[#0A1628] shadow-sm"
-                  : "text-white/70 hover:text-white"
+              className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
+                selectedDays === days ? "bg-white text-[#0A1628] shadow-sm" : "text-white/70"
               }`}
             >
               {label}
@@ -109,106 +107,101 @@ export default function Analytics() {
         </div>
       </div>
 
-      <div className="px-4 -mt-2 flex flex-col gap-4">
-        {/* Chart card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mt-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Income vs Expenses</h2>
+      <div className="px-4 flex flex-col gap-4 mt-4">
+        {/* Stats row */}
+        {!chartLoading && chartData.length > 0 && (
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Income", value: totalIncome, color: GREEN },
+              { label: "Expenses", value: totalExpense, color: RED },
+              { label: "Net", value: net, color: net >= 0 ? GREEN : RED },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 text-center">
+                <p className="text-xs text-gray-500 mb-1">{label}</p>
+                <p className="text-sm font-bold" style={{ color }}>${fmt(Math.abs(value))}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
+        {/* Bar Chart */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">Income vs Expenses</h2>
           {chartLoading ? (
-            <div className="h-48 flex items-center justify-center text-gray-400 text-sm">
-              Loading chart…
+            <div className="h-48 flex items-center justify-center">
+              <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: GREEN, borderTopColor: "transparent" }} />
             </div>
           ) : chartData.length === 0 ? (
-            <div className="h-48 flex flex-col items-center justify-center text-gray-400 text-sm gap-2">
-              <span className="text-3xl">📊</span>
-              <span>No data for this period</span>
+            <div className="h-48 flex flex-col items-center justify-center text-gray-400 gap-2">
+              <span className="text-4xl">📊</span>
+              <span className="text-sm">Not enough data yet — keep tracking!</span>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={chartData} barSize={selectedDays <= 7 ? 20 : 8} barGap={2}>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={chartData} barSize={selectedDays <= 7 ? 18 : 8} barGap={2}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={xTickFormatter}
-                  tick={{ fontSize: 10, fill: "#9CA3AF" }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval={interval}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: "#9CA3AF" }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => `$${v}`}
-                  width={40}
-                />
+                <XAxis dataKey="date" tickFormatter={xTickFmt} tick={{ fontSize: 10, fill: "#9CA3AF" }} axisLine={false} tickLine={false} interval={interval} />
+                <YAxis tick={{ fontSize: 10, fill: "#9CA3AF" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} width={38} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="income_usd" name="income" fill="#00D37F" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="expense_usd" name="expense" fill="#FF4757" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="income_usd" name="income" fill={GREEN} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="expense_usd" name="expense" fill={RED} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
-
-          {/* Legend */}
-          <div className="flex items-center gap-4 mt-3 justify-center">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-sm bg-[#00D37F]" />
-              <span className="text-xs text-gray-500">Income</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-sm bg-[#FF4757]" />
-              <span className="text-xs text-gray-500">Expenses</span>
-            </div>
+          <div className="flex items-center gap-4 mt-2 justify-center">
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: GREEN }} /><span className="text-xs text-gray-500">Income</span></div>
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: RED }} /><span className="text-xs text-gray-500">Expenses</span></div>
           </div>
         </div>
 
-        {/* Quick stats */}
-        {!chartLoading && chartData.length > 0 && (() => {
-          const totalIncome = chartData.reduce((s, d) => s + d.income_usd, 0);
-          const totalExpense = chartData.reduce((s, d) => s + d.expense_usd, 0);
-          const net = totalIncome - totalExpense;
-          return (
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: "Income", value: totalIncome, color: "text-[#00D37F]" },
-                { label: "Expenses", value: totalExpense, color: "text-[#FF4757]" },
-                { label: "Net", value: net, color: net >= 0 ? "text-[#00D37F]" : "text-[#FF4757]" },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 text-center">
-                  <p className="text-xs text-gray-500 mb-1">{label}</p>
-                  <p className={`text-sm font-bold ${color}`}>${fmt(Math.abs(value))}</p>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
+        {/* Net P&L Line Chart */}
+        {!chartLoading && chartData.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Net P&L Trend</h2>
+            <ResponsiveContainer width="100%" height={140}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={xTickFmt} tick={{ fontSize: 10, fill: "#9CA3AF" }} axisLine={false} tickLine={false} interval={interval} />
+                <YAxis tick={{ fontSize: 10, fill: "#9CA3AF" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} width={38} />
+                <Tooltip content={<CustomTooltip />} />
+                <Line
+                  type="monotone"
+                  dataKey="net_usd"
+                  name="net"
+                  stroke={net >= 0 ? GREEN : RED}
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         {/* Insights */}
         <div>
-          <h2 className="text-base font-bold text-gray-800 mb-3">Smart Insights</h2>
+          <h2 className="text-base font-bold mb-3" style={{ color: NAVY }}>Smart Insights</h2>
           {insightsLoading ? (
             <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-16 bg-gray-100 rounded-2xl animate-pulse" />
-              ))}
+              {[1, 2, 3].map((i) => <div key={i} className="h-16 bg-gray-100 rounded-2xl animate-pulse" />)}
             </div>
+          ) : insights.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">Not enough data yet — keep tracking!</div>
           ) : (
             <div className="space-y-3">
-              {(insights as any[]).map((insight, i) => (
-                <div
-                  key={i}
-                  className={`flex items-start gap-3 p-4 rounded-2xl border ${
-                    ICON_BG[insight.icon] ?? "bg-gray-50 border-gray-200"
-                  }`}
-                >
-                  <span className="text-xl leading-none mt-0.5">
-                    {ICON_MAP[insight.icon] ?? "💡"}
-                  </span>
-                  <p className={`text-sm font-medium leading-snug ${ICON_TEXT[insight.icon] ?? "text-gray-700"}`}>
-                    {insight.message}
-                  </p>
-                </div>
-              ))}
+              {insights.map((insight: any, i) => {
+                const s = toneStyle(insight.tone);
+                return (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 p-4 rounded-2xl border"
+                    style={{ background: s.bg, borderColor: `${s.bar}30` }}
+                  >
+                    <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: s.bar }} />
+                    <p className="text-sm font-medium leading-snug" style={{ color: s.text }}>{insight.message}</p>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

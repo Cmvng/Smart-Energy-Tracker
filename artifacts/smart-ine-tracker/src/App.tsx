@@ -5,61 +5,49 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { AddSheetProvider } from "@/lib/add-sheet-context";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import Dashboard from "@/pages/dashboard";
-import AddTransaction from "@/pages/add";
 import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 import BottomNav from "@/components/BottomNav";
-import OfflineBanner from "@/components/OfflineBanner";
 import Onboarding, { isOnboardingDone } from "@/pages/onboarding";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+});
 
 const PUBLIC_PATHS = ["/login", "/register"];
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { token, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-4 border-[#00D37F] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!token) {
-    return <Redirect to="/login" />;
-  }
-
+  if (isLoading) return <Spinner />;
+  if (!token) return <Redirect to="/login" />;
   return <Component />;
 }
 
 function PublicRoute({ component: Component }: { component: React.ComponentType }) {
   const { token, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-4 border-[#00D37F] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (token) {
-    return <Redirect to="/dashboard" />;
-  }
-
+  if (isLoading) return <Spinner />;
+  if (token) return <Redirect to="/dashboard" />;
   return <Component />;
+}
+
+function Spinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F5F6FA]">
+      <div className="w-8 h-8 border-4 border-[#00D37F] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 }
 
 function AppRouter() {
   const [location] = useLocation();
   const { token } = useAuth();
   const showNav = !!token && !PUBLIC_PATHS.includes(location);
+
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return !!token && !isOnboardingDone();
   });
@@ -83,9 +71,6 @@ function AppRouter() {
         <Route path="/dashboard">
           <ProtectedRoute component={Dashboard} />
         </Route>
-        <Route path="/add">
-          <ProtectedRoute component={AddTransaction} />
-        </Route>
         <Route path="/analytics">
           <ProtectedRoute component={Analytics} />
         </Route>
@@ -94,18 +79,8 @@ function AppRouter() {
         </Route>
         <Route component={NotFound} />
       </Switch>
-
       {showNav && <BottomNav />}
     </>
-  );
-}
-
-function MobileContainer({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="w-full max-w-[430px] mx-auto min-h-screen bg-background shadow-[0_0_50px_-12px_rgba(0,0,0,0.15)] relative overflow-x-hidden overflow-y-auto flex flex-col">
-      <OfflineBanner />
-      {children}
-    </div>
   );
 }
 
@@ -115,9 +90,11 @@ function App() {
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <AuthProvider>
-            <MobileContainer>
-              <AppRouter />
-            </MobileContainer>
+            <AddSheetProvider>
+              <div className="w-full max-w-[430px] mx-auto min-h-screen bg-[#F5F6FA] shadow-xl relative overflow-x-hidden flex flex-col md:max-w-none">
+                <AppRouter />
+              </div>
+            </AddSheetProvider>
           </AuthProvider>
         </WouterRouter>
         <Toaster />

@@ -1,0 +1,140 @@
+Now rebuild the entire Smart i-n-E Tracker app from scratch with all features working. Keep the existing database schema and environment variables — just rebuild the frontend and fix the backend routes.
+
+=== CRITICAL REPLIT RULES ===
+- ALL frontend API calls use relative paths like fetch('/api/...') — never localhost or hardcoded ports
+- Express serves the React build as static files + catch-all route for React Router
+- All money values formatted with 2 decimal places and comma separators
+- All API errors return JSON {error: message}, never HTML
+- Loading spinners on all data fetches
+
+=== BACKEND — fix/add these API routes ===
+
+AUTH (fix existing):
+- POST /api/auth/register → bcrypt hash password, create user + default account, return {token, user}
+- POST /api/auth/login → verify password, return {token, user}
+- GET /api/auth/me → return current user (JWT middleware)
+- PATCH /api/user → update name, home_currency, notification_frequency
+
+TRANSACTIONS:
+- GET /api/transactions?timeframe=day|week|month|year → user's transactions filtered by timeframe, newest first, exclude deleted
+- POST /api/transactions → body: {type, amount_original, currency_code, notes, transacted_at}. Look up rate from currencies table, calculate amount_usd = amount_original * rate_to_usd, save and return full transaction
+- DELETE /api/transactions/:id → soft delete (set deleted_at = now())
+- GET /api/transactions/summary?timeframe=day|week|month|year → return: {total_income_usd, total_expense_usd, net_usd, transaction_count, profit_status: 'profit'|'loss'|'breakeven', income_rate_per_hour, expense_rate_per_hour, insight_message}
+  insight_message examples: "You're spending $3.20/hour today" / "You're up $45.00 this week 🎉" / "3-day loss streak — review your expenses"
+
+CURRENCIES:
+- GET /api/currencies → return all currencies with current rates
+- POST /api/currencies/refresh → fetch from Open Exchange Rates API using EXCHANGE_RATES_API_KEY env var, update rates in DB, return {updated: count}. If API key is placeholder or missing, skip silently and return {updated: 0, note: 'using cached rates'}
+
+ANALYTICS:
+- GET /api/analytics/chart?days=7|30 → return [{date, income_usd, expense_usd, net_usd}] grouped by day for that user
+- GET /api/analytics/insights → return array of 3 insight objects [{type, message, tone: 'positive'|'neutral'|'warning'}] based on last 30 days
+
+EXPORT:
+- GET /api/export/csv → stream CSV of all user transactions as file download
+
+NOTIFICATIONS:
+- POST /api/notifications/test → insert test entry into notifications_log for current user, return it
+
+Seed currencies table on startup (INSERT ... ON CONFLICT DO NOTHING):
+USD 1.0, EUR 0.92, GBP 0.79, NGN 0.00065, KES 0.0077, GHS 0.068, ZAR 0.054, INR 0.012, CAD 0.74, AUD 0.65, JPY 0.0067, CNY 0.14, BRL 0.20, MXN 0.058, AED 0.27, SAR 0.27, PKR 0.0036, EGP 0.032, TZS 0.00039, CHF 1.10
+
+=== FRONTEND — rebuild all screens ===
+
+COLOR SYSTEM: navy #0A1628, green #00D37F, red #FF4757, background #F5F6FA, white cards, dark text #1A1A2E
+
+RESPONSIVE LAYOUT RULES:
+- Mobile (≤768px): full width, bottom navigation bar fixed at bottom with 4 tabs: Home | Add | Analytics | Settings. Each tab is an icon + label, minimum 60px tall.
+- Desktop (>768px): left sidebar 240px wide (app logo at top, nav links in middle, user info at bottom) + main content area centered max-width 860px. Bottom nav hidden on desktop.
+- The FAB "+" button is visible on BOTH mobile and desktop, fixed bottom-right, 56px circle, green background.
+
+SCREEN 1 — Onboarding (show only once, track with localStorage key 'ine_onboarding_done'):
+- 4 slides with dot indicators showing progress
+- Slide 1: Large app logo/icon, name "Smart i-n-E Tracker", tagline "Track every dollar. Know your profit.", Next button
+- Slide 2: "Choose your mode" — two large clickable cards side by side: Individual (person icon, "Personal finances") and Business (building icon, "Business revenue & costs"). Selected card gets green border.
+- Slide 3: "Your home currency" — searchable list of all 20 currencies, tap to select
+- Slide 4: "You're all set! 🎉" — shows their chosen mode and currency, "Start Tracking" button → saves choices to user profile via PATCH /api/user, sets localStorage 'ine_onboarding_done'=true, redirects to /dashboard
+
+SCREEN 2 — Auth (/login and /register):
+- Centered card, max-width 420px
+- Navy header bar with app name and logo
+- Register fields: Full name, Email, Password, Mode toggle (Individual/Business), Home currency dropdown
+- Login fields: Email, Password, "Forgot password?" link (non-functional placeholder)
+- "Don't have an account? Register" link and vice versa
+- On success: save JWT as localStorage 'ine_token', save user object as 'ine_user', redirect to /dashboard
+- Show inline error messages if login/register fails
+
+SCREEN 3 — Dashboard (/dashboard):
+- Header: app name left, "[Individual/Business] Mode" badge center, user avatar circle with initials right
+- Timeframe selector tabs below header: Day | Week | Month | Year. Clicking each tab re-fetches summary and transactions.
+- 3 summary cards in a row:
+  * Income: green header, shows total_income_usd formatted as "$X,XXX.XX"
+  * Expenses: red header, shows total_expense_usd
+  * Net P&L: green if profit, red if loss, shows net_usd with + or - prefix
+- Insight banner: colored pill below the cards showing insight_message. Green background for profit, amber for neutral, red for loss.
+- Transaction list:
+  * Each row: colored left border (green=income, red=expense), type icon, notes text or "No description" in grey, right side shows original amount + currency code in bold, USD equivalent below in grey, time (e.g. "2h ago", "Yesterday")
+  * Group by date with date headers ("Today", "Yesterday", "March 25")
+  * Empty state: centered icon + "No transactions yet" + "Tap + to add your first entry" text
+- Pull-to-refresh on mobile (touch events)
+- FAB button: fixed bottom-right, 56px green circle, white + icon, shadow
+
+SCREEN 4 — Quick Add (bottom sheet on mobile, centered modal on desktop):
+- Triggered ONLY by FAB button — uses React useState, NOT a router navigation
+- Overlay: semi-transparent dark background behind the sheet
+- Sheet slides up from bottom on mobile (animation: transform translateY), centered modal on desktop
+- TOP TOGGLE — two large buttons side by side taking full width:
+  [💰 Income / Saved]    [💸 Expense / Spent]
+  Income button: green background #00D37F when selected, white text
+  Expense button: red background #FF4757 when selected, white text
+  Unselected button: white background, grey border
+  Default: Expense selected
+- Amount input:
+  * Font size 36px, centered, bold
+  * Currency symbol shown on left based on selected currency
+  * Numeric input type, auto-focus when sheet opens
+  * Placeholder: "0.00"
+- Live conversion preview: "≈ $X.XX USD" shown below input in grey — updates as user types. Hidden if home currency is already USD.
+- Currency selector: dropdown showing flag emoji + currency code + name. Shows all 20 currencies. Default: user's home currency.
+- Notes field: single line, placeholder "What was this for? (optional)"
+- Date/time field: defaults to current date/time, tappable to show datetime-local input
+- Save button: full width, 52px tall, color matches selected type (green or red)
+  Text: "Save Income +" when income selected, "Save Expense −" when expense selected
+- On save: POST /api/transactions, show success toast bottom of screen ("✅ Income saved — +$X.XX"), close sheet, refresh dashboard transaction list and summary cards
+- On error: show red toast with error message
+- Close button (X) top right of sheet
+
+SCREEN 5 — Analytics (/analytics):
+- Header: "Analytics" title, timeframe toggle 7 days | 30 days
+- Bar chart using recharts library:
+  * X axis: dates, Y axis: USD amounts
+  * Green bars for income, red bars for expenses
+  * Tooltip showing exact amounts on hover/tap
+  * Responsive width
+- Net P&L line chart below the bar chart (single line, green if positive, red if negative)
+- Insight cards section: 3 cards from /api/analytics/insights
+  * Each card: left colored bar, insight message, subtle background
+  * Positive insights: green left bar + green-tinted background
+  * Warning insights: red left bar + red-tinted background
+  * Neutral: amber left bar + amber-tinted background
+- Empty state if no data: "Not enough data yet — keep tracking!"
+
+SCREEN 6 — Settings (/settings):
+- User profile card at top: large avatar circle with initials, name (editable), email (read only)
+- Preferences section:
+  * Home currency: dropdown selector, saves on change
+  * Mode: Individual / Business toggle
+  * Notification reminders: Daily | Every 3 days | Weekly | Off (saves on change)
+- Data section:
+  * "Refresh exchange rates" button → calls POST /api/currencies/refresh, shows success/error toast
+  * "Download CSV" button → calls GET /api/export/csv, triggers file download
+  * "Send test reminder" button → calls POST /api/notifications/test, shows confirmation
+- Danger zone:
+  * "Log out" button → clears localStorage, redirects to /login
+
+=== FINAL SETUP ===
+After building everything, automatically:
+1. Create a demo user: email=demo@ine.app, password=Demo1234!, name=Demo User, mode=individual, home_currency=USD
+2. Add 10 sample transactions spread across the last 7 days (mix of income and expenses, various amounts, with notes like "Freelance payment", "Groceries", "Client invoice", "Transport", "Lunch", etc.)
+3. Confirm the app loads at the dev URL showing the login page
+4. Confirm the demo user can log in and sees a populated dashboard

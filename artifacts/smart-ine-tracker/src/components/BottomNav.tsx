@@ -1,4 +1,5 @@
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
+import { useAddSheet } from "@/lib/add-sheet-context";
 
 const HomeIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -7,8 +8,8 @@ const HomeIcon = () => (
   </svg>
 );
 
-const PlusCircleIcon = () => (
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const AddIcon = () => (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10"/>
     <path d="M12 8v8M8 12h8"/>
   </svg>
@@ -30,40 +31,48 @@ const GearIcon = () => (
   </svg>
 );
 
-const tabs = [
-  { path: "/dashboard", label: "Home", Icon: HomeIcon },
-  { path: "/add", label: "Add", Icon: PlusCircleIcon },
-  { path: "/analytics", label: "Analytics", Icon: ChartIcon },
-  { path: "/settings", label: "Settings", Icon: GearIcon },
+const NAV_TABS = [
+  { id: "home", path: "/dashboard", label: "Home", Icon: HomeIcon, isAdd: false },
+  { id: "add", path: null, label: "Add", Icon: AddIcon, isAdd: true },
+  { id: "analytics", path: "/analytics", label: "Analytics", Icon: ChartIcon, isAdd: false },
+  { id: "settings", path: "/settings", label: "Settings", Icon: GearIcon, isAdd: false },
 ];
 
 export default function BottomNav() {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
+  const { openAddSheet } = useAddSheet();
 
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white border-t border-gray-100 z-50 safe-bottom">
-      <div className="flex items-center justify-around px-2 py-2">
-        {tabs.map(({ path, label, Icon }) => {
-          const isActive = location === path || (path === "/dashboard" && location === "/");
-          const isAdd = path === "/add";
-          return (
-            <Link key={path} href={path}>
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white border-t border-gray-100 z-40 md:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+      <div className="flex items-center justify-around h-[60px] px-2">
+        {NAV_TABS.map(({ id, path, label, Icon, isAdd }) => {
+          const isActive = path ? (location === path || (path === "/dashboard" && location === "/")) : false;
+
+          if (isAdd) {
+            return (
               <button
-                className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl transition-all duration-200 ${
-                  isActive
-                    ? "text-[#0A1628]"
-                    : "text-gray-400 hover:text-gray-600"
-                } ${isAdd ? "relative -top-2" : ""}`}
+                key={id}
+                onClick={openAddSheet}
+                className="flex flex-col items-center justify-center gap-0.5 px-4 py-1 text-[#00D37F] relative -top-1"
               >
-                <span className={`${isAdd && isActive ? "text-[#00D37F]" : isAdd ? "text-[#00D37F]" : ""}`}>
-                  <Icon />
-                </span>
-                <span className={`text-[10px] font-medium tracking-wide ${isAdd ? "text-[#00D37F]" : ""}`}>{label}</span>
-                {isActive && !isAdd && (
-                  <span className="absolute bottom-0 w-6 h-0.5 bg-[#0A1628] rounded-full" />
-                )}
+                <Icon />
+                <span className="text-[10px] font-semibold tracking-wide">{label}</span>
               </button>
-            </Link>
+            );
+          }
+
+          return (
+            <button
+              key={id}
+              onClick={() => path && navigate(path)}
+              className={`flex flex-col items-center justify-center gap-0.5 px-4 py-1 transition-colors ${
+                isActive ? "text-[#0A1628]" : "text-gray-400"
+              }`}
+            >
+              <Icon />
+              <span className="text-[10px] font-medium tracking-wide">{label}</span>
+              {isActive && <span className="absolute bottom-0 w-5 h-0.5 bg-[#0A1628] rounded-full" />}
+            </button>
           );
         })}
       </div>
