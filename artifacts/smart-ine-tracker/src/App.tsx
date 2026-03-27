@@ -1,4 +1,5 @@
 import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
+import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,6 +13,8 @@ import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 import BottomNav from "@/components/BottomNav";
+import OfflineBanner from "@/components/OfflineBanner";
+import Onboarding, { isOnboardingDone } from "@/pages/onboarding";
 
 const queryClient = new QueryClient();
 
@@ -57,6 +60,13 @@ function AppRouter() {
   const [location] = useLocation();
   const { token } = useAuth();
   const showNav = !!token && !PUBLIC_PATHS.includes(location);
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return !!token && !isOnboardingDone();
+  });
+
+  if (token && showOnboarding) {
+    return <Onboarding onComplete={() => setShowOnboarding(false)} />;
+  }
 
   return (
     <>
@@ -93,6 +103,7 @@ function AppRouter() {
 function MobileContainer({ children }: { children: React.ReactNode }) {
   return (
     <div className="w-full max-w-[430px] mx-auto min-h-screen bg-background shadow-[0_0_50px_-12px_rgba(0,0,0,0.15)] relative overflow-x-hidden overflow-y-auto flex flex-col">
+      <OfflineBanner />
       {children}
     </div>
   );

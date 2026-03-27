@@ -6,6 +6,7 @@ import transactionsRouter from "./transactions";
 import analyticsRouter from "./analytics";
 import userRouter from "./user";
 import exportRouter from "./exportRoutes";
+import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use("/transactions", transactionsRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/user", userRouter);
 router.use("/export", exportRouter);
+router.use("/notifications", notificationsRouter);
 
 export default router;

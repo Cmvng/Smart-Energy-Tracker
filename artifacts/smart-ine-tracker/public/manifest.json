@@ -1,0 +1,22 @@
+{
+  "name": "Smart i-n-E Tracker",
+  "short_name": "iNE Tracker",
+  "description": "Track your income and expenses. Know your profit.",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0A1628",
+  "background_color": "#F5F6FA",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%230A1628'/><path d='M96 40L40 70l56 28 56-28-56-30z' fill='%2300D37F'/><path d='M40 120l56 28 56-28' stroke='%2300D37F' stroke-width='8' stroke-linecap='round' fill='none'/><path d='M40 96l56 28 56-28' stroke='white' stroke-width='8' stroke-linecap='round' fill='none' opacity='0.5'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='100' fill='%230A1628'/><path d='M256 100L100 185l156 78 156-78-156-85z' fill='%2300D37F'/><path d='M100 330l156 78 156-78' stroke='%2300D37F' stroke-width='20' stroke-linecap='round' fill='none'/><path d='M100 256l156 78 156-78' stroke='white' stroke-width='20' stroke-linecap='round' fill='none' opacity='0.5'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

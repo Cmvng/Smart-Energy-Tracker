@@ -10,7 +10,7 @@ const VALID_MODES = ["individual", "business"];
 const VALID_NOTIF = ["daily", "every_3_days", "weekly", "off"];
 
 router.patch("/", requireAuth, async (req: AuthRequest, res: Response) => {
-  const { home_currency, mode, notification_frequency } = req.body;
+  const { home_currency, mode, notification_frequency, name } = req.body;
 
   if (mode && !VALID_MODES.includes(mode)) {
     res.status(400).json({ error: "validation_error", message: "Invalid mode" });
@@ -26,6 +26,7 @@ router.patch("/", requireAuth, async (req: AuthRequest, res: Response) => {
     if (home_currency) updates.home_currency = home_currency;
     if (mode) updates.mode = mode;
     if (notification_frequency) updates.notification_frequency = notification_frequency;
+    if (name && typeof name === "string" && name.trim().length >= 2) updates.name = name.trim();
 
     const [updated] = await db
       .update(usersTable)
