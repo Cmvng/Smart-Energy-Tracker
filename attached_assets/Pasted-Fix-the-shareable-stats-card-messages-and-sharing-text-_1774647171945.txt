@@ -1,0 +1,93 @@
+Fix the shareable stats card messages and sharing text.
+
+LOSS MESSAGES — replace boring messages with these fun ones.
+Pick randomly from this array each time card is generated:
+
+const lossMesages = [
+  "Ouch! Time to cut those losses 💀",
+  "Your wallet called... it's crying 😭",
+  "Red alert! Expenses winning today 🚨",
+  "The money left the chat 😅",
+  "Plot twist: expenses are the main character 😬",
+  "Your future self is giving you the side eye 👀",
+  "Okay okay... let's turn this around 💪",
+  "Budget meeting needed ASAP 📋",
+  "The expenses are not behaving 😤",
+  "This is fine... totally fine 🔥🙂🔥"
+]
+
+PROFIT MESSAGES — replace with these fun ones.
+Pick randomly from this array:
+
+const profitMessages = [
+  "You're eating good tonight! 🍽️",
+  "Money moves only 💸👑",
+  "Your bank account is smiling 😁",
+  "Profit mode: ACTIVATED 🚀",
+  "Look at you, being financially responsible! 🏆",
+  "The bag has been secured 💰",
+  "Finance bro behavior 📈🔥",
+  "This is what winning looks like 🥇",
+  "Your future self says thank you 🙌",
+  "Stack it up! Keep going 💪"
+]
+
+BREAKEVEN MESSAGES:
+const breakevenMessages = [
+  "Perfectly balanced, as all things should be ⚖️",
+  "Zero is a vibe... but let's do better 😄",
+  "Exactly even — income needs to step up 💡",
+  "Not losing, not winning — time to tip the scale 📊"
+]
+
+Implementation:
+- Pick a random message using:
+  messages[Math.floor(Math.random() * messages.length)]
+- Pick fresh random message every time the card 
+  is previewed or regenerated
+- Show the message in the card centered above 
+  the footer section
+- Font size 14px, font weight 500
+- Color: white on dark themes, #0A1628 on white theme
+
+SHARING TEXT — remove all hashtags:
+
+When sharing to X (Twitter), the tweet text must be:
+
+For profit:
+"My finances this [period]:
+💚 Income: $[X]
+❤️ Expenses: $[X]
+🟢 Net Profit: +$[X]
+
+Tracked with Smart i-n-E Tracker
+[APP_URL]"
+
+For loss:
+"My finances this [period]:
+💚 Income: $[X]
+❤️ Expenses: $[X]
+🔴 Net Loss: -$[X]
+
+Tracked with Smart i-n-E Tracker
+[APP_URL]"
+
+For breakeven:
+"My finances this [period]:
+💚 Income: $[X]
+❤️ Expenses: $[X]
+🟡 Breakeven: $0.00
+
+Tracked with Smart i-n-E Tracker
+[APP_URL]"
+
+No hashtags anywhere in the share text.
+No hashtags in the Web Share API text either.
+
+Also when user taps "Share on X" button:
+Show this message to user before opening Twitter:
+"Your card is downloading now 📥
+When Twitter opens, tap the image icon 
+to attach your card to the tweet!"
+
+Rebuild after changes: cd client && npm run build

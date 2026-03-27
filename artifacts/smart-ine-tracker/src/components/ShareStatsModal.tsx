@@ -13,8 +13,36 @@ const THEMES = [
   { id: "purple", label: "Midnight Purple", bg: "#1a0533", text: "#FFFFFF", accent: GREEN },
 ];
 
-const PROFIT_LINES = ["Crushing it! 💪", "On a roll! 🔥", "Profit mode activated 🚀"];
-const LOSS_LINES = ["Every day is a new chance 💪", "Track it. Fix it. Win it 🎯"];
+const PROFIT_LINES = [
+  "You're eating good tonight! 🍽️",
+  "Money moves only 💸👑",
+  "Your bank account is smiling 😁",
+  "Profit mode: ACTIVATED 🚀",
+  "Look at you, being financially responsible! 🏆",
+  "The bag has been secured 💰",
+  "Finance bro behavior 📈🔥",
+  "This is what winning looks like 🥇",
+  "Your future self says thank you 🙌",
+  "Stack it up! Keep going 💪",
+];
+const LOSS_LINES = [
+  "Ouch! Time to cut those losses 💀",
+  "Your wallet called... it's crying 😭",
+  "Red alert! Expenses winning today 🚨",
+  "The money left the chat 😅",
+  "Plot twist: expenses are the main character 😬",
+  "Your future self is giving you the side eye 👀",
+  "Okay okay... let's turn this around 💪",
+  "Budget meeting needed ASAP 📋",
+  "The expenses are not behaving 😤",
+  "This is fine... totally fine 🔥🙂🔥",
+];
+const BREAKEVEN_LINES = [
+  "Perfectly balanced, as all things should be ⚖️",
+  "Zero is a vibe... but let's do better 😄",
+  "Exactly even — income needs to step up 💡",
+  "Not losing, not winning — time to tip the scale 📊",
+];
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n));
@@ -93,7 +121,7 @@ export default function ShareStatsModal({ onClose }: ShareStatsModalProps) {
     ? PROFIT_LINES[Math.floor(Math.random() * PROFIT_LINES.length)]
     : profitStatus === "loss"
     ? LOSS_LINES[Math.floor(Math.random() * LOSS_LINES.length)]
-    : null;
+    : BREAKEVEN_LINES[Math.floor(Math.random() * BREAKEVEN_LINES.length)];
 
   const userDisplayName = displayName(user);
 
@@ -128,11 +156,21 @@ export default function ShareStatsModal({ onClose }: ShareStatsModalProps) {
     finally { setDownloading(false); }
   };
 
+  const periodLabel2 = period === "week" ? "this week" : period === "month" ? "this month" : period === "custom" ? `${fromDate} to ${toDate}` : "today";
+
   const getTweetText = () => {
-    const sign = net >= 0 ? "+" : "-";
-    const emoji = profitStatus === "profit" ? "🟢" : profitStatus === "loss" ? "🔴" : "🟡";
+    if (profitStatus === "profit") {
+      return encodeURIComponent(
+        `My finances ${periodLabel2}:\n💚 Income: $${fmt(income)}\n❤️ Expenses: $${fmt(expenses)}\n🟢 Net Profit: +$${fmt(net)}\n\nTracked with Smart i-n-E Tracker\n${window.location.origin}`
+      );
+    }
+    if (profitStatus === "loss") {
+      return encodeURIComponent(
+        `My finances ${periodLabel2}:\n💚 Income: $${fmt(income)}\n❤️ Expenses: $${fmt(expenses)}\n🔴 Net Loss: -$${fmt(Math.abs(net))}\n\nTracked with Smart i-n-E Tracker\n${window.location.origin}`
+      );
+    }
     return encodeURIComponent(
-      `My finances ${period === "week" ? "this week" : period === "month" ? "this month" : "today"}:\n💚 Income: $${fmt(income)}\n❤️ Expenses: $${fmt(expenses)}\n${emoji} Net: ${sign}$${fmt(net)}\n\nTracked with Smart i-n-E Tracker\n${window.location.origin} #SmartINE #FinanceTracker #MoneyMoves`
+      `My finances ${periodLabel2}:\n💚 Income: $${fmt(income)}\n❤️ Expenses: $${fmt(expenses)}\n🟡 Breakeven: $0.00\n\nTracked with Smart i-n-E Tracker\n${window.location.origin}`
     );
   };
 
@@ -147,8 +185,8 @@ export default function ShareStatsModal({ onClose }: ShareStatsModalProps) {
         a.download = `smart-ine-${period}.png`;
         a.click();
         URL.revokeObjectURL(url);
-        showToast("Card downloaded! Tweet opens next — attach your card to the tweet 📎");
-        setTimeout(() => window.open(`https://twitter.com/intent/tweet?text=${getTweetText()}`, "_blank"), 1200);
+        showToast("Your card is downloading now 📥 When Twitter opens, tap the image icon to attach your card to the tweet!");
+        setTimeout(() => window.open(`https://twitter.com/intent/tweet?text=${getTweetText()}`, "_blank"), 1800);
       }
     } catch { showToast("❌ Could not share"); }
     finally { setSharing(false); }
@@ -160,9 +198,14 @@ export default function ShareStatsModal({ onClose }: ShareStatsModalProps) {
       const blob = await generateImage();
       if (!blob) return;
       const file = new File([blob], `smart-ine-${period}.png`, { type: "image/png" });
-      const sign = net >= 0 ? "+" : "-";
-      const emoji = profitStatus === "profit" ? "🟢" : profitStatus === "loss" ? "🔴" : "🟡";
-      const text = `My finances ${period === "week" ? "this week" : period === "month" ? "this month" : "today"}:\n💚 Income: $${fmt(income)}\n❤️ Expenses: $${fmt(expenses)}\n${emoji} Net: ${sign}$${fmt(net)}\n\nTracked with Smart i-n-E Tracker`;
+      let text: string;
+      if (profitStatus === "profit") {
+        text = `My finances ${periodLabel2}:\n💚 Income: $${fmt(income)}\n❤️ Expenses: $${fmt(expenses)}\n🟢 Net Profit: +$${fmt(net)}\n\nTracked with Smart i-n-E Tracker`;
+      } else if (profitStatus === "loss") {
+        text = `My finances ${periodLabel2}:\n💚 Income: $${fmt(income)}\n❤️ Expenses: $${fmt(expenses)}\n🔴 Net Loss: -$${fmt(Math.abs(net))}\n\nTracked with Smart i-n-E Tracker`;
+      } else {
+        text = `My finances ${periodLabel2}:\n💚 Income: $${fmt(income)}\n❤️ Expenses: $${fmt(expenses)}\n🟡 Breakeven: $0.00\n\nTracked with Smart i-n-E Tracker`;
+      }
       await navigator.share({ title: "My Finance Stats", text, files: [file] });
     } catch (e: any) {
       if (e.name !== "AbortError") showToast("❌ Share failed");
