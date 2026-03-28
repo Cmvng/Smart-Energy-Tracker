@@ -1,0 +1,90 @@
+The date fix was NOT applied. The app is still 
+showing wrong dates like November 2026.
+
+Open server/excel_parser.py and find the 
+parse_date function. Replace it COMPLETELY 
+with this exact code - do not modify anything:
+
+def parse_date(s):
+    if not s: return None
+    s = str(s).strip().split(' ')[0]
+    
+    m = re.match(
+        r'^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$', s
+    )
+    if m:
+        day, month, year_raw = m.groups()
+        day = day.zfill(2)
+        month = month.zfill(2)
+        yr = int(year_raw)
+        if yr < 100:
+            year = str(2000+yr) if yr<50 else str(1900+yr)
+        else:
+            year = str(yr)
+        try:
+            dt = datetime.strptime(
+                f'{year}-{month}-{day}', '%Y-%m-%d'
+            )
+            if 2000 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+        except: pass
+    
+    m = re.match(
+        r'^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$', s
+    )
+    if m:
+        y, mo, d = m.groups()
+        try:
+            dt = datetime.strptime(
+                f'{y}-{mo.zfill(2)}-{d.zfill(2)}',
+                '%Y-%m-%d'
+            )
+            if 2000 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+        except: pass
+    
+    months_map = {
+        'jan':'01','feb':'02','mar':'03','apr':'04',
+        'may':'05','jun':'06','jul':'07','aug':'08',
+        'sep':'09','oct':'10','nov':'11','dec':'12'
+    }
+    m = re.search(
+        r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|'
+        r'Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})',
+        s, re.IGNORECASE
+    )
+    if m:
+        d, mn, y = m.groups()
+        mo = months_map[mn.lower()[:3]]
+        try:
+            dt = datetime.strptime(
+                f'{y}-{mo}-{d.zfill(2)}', '%Y-%m-%d'
+            )
+            if 2000 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+        except: pass
+    
+    return None
+
+After updating the file also run this SQL to 
+delete the wrong transactions already imported:
+
+DELETE FROM transactions 
+WHERE import_id IN (
+  SELECT id FROM document_imports 
+  WHERE user_id = (
+    SELECT id FROM users 
+    WHERE email = 'cmvceo1000@gmail.com'
+  )
+);
+DELETE FROM document_imports 
+WHERE user_id = (
+  SELECT id FROM users 
+  WHERE email = 'cmvceo1000@gmail.com'
+);
+
+Then restart the server (no build needed).
+Then upload Customer Statement.xlsx again.
+Dates must show January, February, March 2026.
+Show me the first 5 transaction dates from 
+the console output.
