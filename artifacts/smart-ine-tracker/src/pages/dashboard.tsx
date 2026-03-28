@@ -481,8 +481,8 @@ function TxRow({ tx, onEdit, onDelete }: { tx: any; onEdit: (tx: any) => void; o
           {formatDistanceToNow(new Date(tx.transacted_at), { addSuffix: true })}
         </p>
       </div>
-      <div className="text-right shrink-0">
-        <p className="font-bold text-sm" style={{ color: isIncome ? GREEN : NAVY }}>
+      <div className="text-right shrink-0 max-w-[140px]">
+        <p className="font-bold text-sm truncate" style={{ color: isIncome ? GREEN : NAVY }}>
           {isIncome ? "+" : "-"}{fmt(Number(tx.amount_original))} {tx.currency_code}
         </p>
         {tx.currency_code !== "USD" && tx.amount_usd && (
