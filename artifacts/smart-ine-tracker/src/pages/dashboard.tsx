@@ -466,7 +466,7 @@ function TxRow({ tx, onEdit, onDelete }: { tx: any; onEdit: (tx: any) => void; o
 
   return (
     <div
-      className="flex items-center gap-2 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 min-h-[68px] overflow-hidden"
+      className="flex items-center gap-2 p-3 bg-white rounded-2xl shadow-sm border border-gray-100 min-h-[68px] overflow-hidden w-full max-w-full"
       style={{ borderLeft: `4px solid ${isIncome ? GREEN : RED}` }}
     >
       <div
@@ -481,12 +481,12 @@ function TxRow({ tx, onEdit, onDelete }: { tx: any; onEdit: (tx: any) => void; o
           {formatDistanceToNow(new Date(tx.transacted_at), { addSuffix: true })}
         </p>
       </div>
-      <div className="text-right shrink-0 max-w-[140px]">
-        <p className="font-bold text-sm truncate" style={{ color: isIncome ? GREEN : NAVY }}>
+      <div className="text-right shrink-0 max-w-[120px] overflow-hidden">
+        <p className="font-bold text-sm truncate max-w-[120px]" style={{ color: isIncome ? GREEN : NAVY }}>
           {isIncome ? "+" : "-"}{fmt(Number(tx.amount_original))} {tx.currency_code}
         </p>
         {tx.currency_code !== "USD" && tx.amount_usd && (
-          <p className="text-xs text-gray-400 mt-0.5">≈ ${fmt(Number(tx.amount_usd))}</p>
+          <p className="text-xs text-gray-400 mt-0.5 truncate">≈ ${fmt(Number(tx.amount_usd))}</p>
         )}
       </div>
       <div ref={menuRef} className="relative shrink-0 ml-1">
