@@ -290,7 +290,7 @@ export default function Dashboard() {
             ) : (
               <>
                 {/* Mobile: grouped card list */}
-                <div className="space-y-4 md:hidden">
+                <div className="space-y-4 md:hidden w-full overflow-hidden">
                   {Object.entries(grouped)
                     .sort(([a], [b]) => b.localeCompare(a))
                     .map(([date, txs]) => (
@@ -466,7 +466,7 @@ function TxRow({ tx, onEdit, onDelete }: { tx: any; onEdit: (tx: any) => void; o
 
   return (
     <div
-      className="flex items-center gap-2 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 min-h-[68px]"
+      className="flex items-center gap-2 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 min-h-[68px] overflow-hidden"
       style={{ borderLeft: `4px solid ${isIncome ? GREEN : RED}` }}
     >
       <div
