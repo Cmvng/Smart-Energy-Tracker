@@ -1,0 +1,108 @@
+Replace the entire document parser with this 
+Python-based solution. It requires NO API keys 
+and works on ALL document types.
+
+1. Save this file to server/document_reader.py
+   (I am attaching the content below)
+
+2. Install Python dependencies:
+   pip install pdfplumber pdf2image pytesseract Pillow
+
+3. In server/document-parser.ts, replace the 
+   entire detectAndParse function with this:
+
+import { execFileSync } from 'child_process'
+import * as path from 'path'
+import * as fs from 'fs'
+import * as os from 'os'
+
+export async function detectAndParse(
+  buffer: Buffer,
+  filename: string,
+  mimeType: string
+) {
+  // Write buffer to temp file
+  const tmpDir = os.tmpdir()
+  const tmpFile = path.join(tmpDir, 
+    `upload_${Date.now()}_${filename}`)
+  
+  try {
+    fs.writeFileSync(tmpFile, buffer)
+    
+    const scriptPath = path.join(
+      __dirname, 'document_reader.py'
+    )
+    
+    console.log(`📄 Processing: ${filename}`)
+    
+    const output = execFileSync('python3', [scriptPath, tmpFile], {
+      timeout: 120000,  // 2 min timeout
+      maxBuffer: 10 * 1024 * 1024  // 10MB output buffer
+    })
+    
+    const result = JSON.parse(output.toString())
+    
+    console.log(`✅ Parsed with ${result.method}:`, 
+      result.total_found, 'transactions found')
+    
+    return {
+      success: true,
+      transactions: result.transactions || [],
+      totalFound: result.total_found || 0,
+      method: result.method,
+      currency: result.currency,
+      parseMethod: result.method
+    }
+    
+  } catch(e: any) {
+    console.error('❌ Parser error:', e.message)
+    
+    // Check if it's a timeout
+    if (e.message?.includes('timeout') || 
+        e.signal === 'SIGTERM') {
+      return {
+        success: false,
+        locked: true,
+        transactions: [],
+        totalFound: 0,
+        message: 'timeout'
+      }
+    }
+    
+    return {
+      success: false,
+      locked: true,
+      transactions: [],
+      totalFound: 0,
+      message: 'parse_failed'
+    }
+    
+  } finally {
+    // Always clean up temp file
+    try { fs.unlinkSync(tmpFile) } catch {}
+  }
+}
+
+4. The content of server/document_reader.py 
+   should be the Python script I will paste next.
+   Copy it exactly with no modifications.
+
+5. After adding the files:
+   cd client && npm run build
+   Restart server
+   
+6. Test by uploading:
+   - A CSV bank statement
+   - A PDF bank statement
+   - Show me the console output for both
+
+The Python script handles:
+- CSV files from any bank worldwide
+- Digital PDF statements (table extraction)  
+- Locked/e-signed PDFs (OCR fallback)
+- Receipt images JPG/PNG
+- Detects currency automatically (NGN, GBP, USD, KES, GHS etc)
+- 60+ income keywords including 'inward transfer', 
+  'NIP credit', 'salary', 'lodgement' etc
+- 60+ expense keywords
+- No API keys, no external services, works forever free
