@@ -1,0 +1,653 @@
+Upgrade the document parser to be truly universal —
+works for ANY bank in ANY country worldwide.
+Every possible term a bank could use for 
+income or expense must be recognized.
+
+═══════════════════════════════════════════════
+PART 1 — MASTER KEYWORD DICTIONARY
+═══════════════════════════════════════════════
+Create this comprehensive keyword map in 
+document-parser.ts:
+
+const INCOME_KEYWORDS = [
+  // Transfer in
+  'inward transfer', 'inward remittance',
+  'incoming transfer', 'incoming payment',
+  'transfer in', 'transfer from',
+  'funds transfer in', 'trf in',
+  'nip in', 'neft in', 'rtgs in',
+  'imps in', 'upi in',
+  
+  // Salary & employment
+  'salary', 'salari', 'payroll', 'pay credit',
+  'wages', 'stipend', 'remuneration',
+  'employment income', 'staff salary',
+  
+  // Deposits
+  'deposit', 'cash deposit', 'lodgement',
+  'lodgment', 'cash lodgement',
+  'over the counter', 'otc deposit',
+  'branch deposit', 'counter deposit',
+  
+  // Credits
+  'credit', 'cr ', ' cr', 'credited',
+  'account credited', 'funds credited',
+  
+  // Payments received
+  'payment received', 'payment from',
+  'received from', 'receipt from',
+  'proceeds', 'collection',
+  
+  // Business income
+  'invoice payment', 'client payment',
+  'customer payment', 'sales proceeds',
+  'business income', 'revenue',
+  'contract payment', 'project payment',
+  
+  // Refunds & reversals
+  'refund', 'reversal', 'reversed',
+  'chargeback', 'cashback', 'cash back',
+  'rebate', 'reimbursement', 'reimburse',
+  'returned payment', 'return credit',
+  
+  // Investment & interest
+  'interest earned', 'interest credit',
+  'interest income', 'dividend',
+  'investment return', 'bond coupon',
+  'fixed deposit maturity', 'fd maturity',
+  'investment proceeds',
+  
+  // International transfers
+  'swift credit', 'wire transfer in',
+  'international transfer in',
+  'foreign inward remittance',
+  'foreign transfer', 'forex credit',
+  'domiciliary credit',
+  
+  // Freelance/gig
+  'freelance', 'consultation fee',
+  'consulting payment', 'contract fee',
+  
+  // Loans
+  'loan disbursement', 'loan credit',
+  'loan proceeds', 'overdraft credit',
+  
+  // Alerts & notifications
+  'alert: credit', 'alert:credit',
+  'you have received', 'funds received',
+  
+  // African bank specific
+  'nibss credit', 'nip credit',
+  'interbank transfer credit',
+  'mobile money credit', 'momo credit',
+  'mpesa credit', 'm-pesa in',
+  'airtel money credit', 'mtn momo in',
+  
+  // Asian bank specific
+  'upi credit', 'neft credit',
+  'rtgs credit', 'imps credit',
+  'paytm credit', 'gpay credit',
+  
+  // European bank specific
+  'sepa credit', 'sepa transfer in',
+  'bacs credit', 'faster payment in',
+  'chaps credit', 'standing order credit',
+  
+  // US bank specific
+  'ach credit', 'direct deposit',
+  'zelle credit', 'venmo credit',
+  'wire credit', 'check deposit',
+  'cheque deposit',
+  
+  // Other
+  'prize', 'award', 'bonus',
+  'commission earned', 'royalty',
+  'rental income', 'rent received',
+  'subsidy', 'grant', 'scholarship'
+]
+
+const EXPENSE_KEYWORDS = [
+  // Transfer out
+  'outward transfer', 'outward remittance',
+  'outgoing transfer', 'outgoing payment',
+  'transfer out', 'transfer to',
+  'funds transfer out', 'trf out',
+  'nip out', 'neft out', 'rtgs out',
+  'imps out', 'upi out', 'upi debit',
+  
+  // Withdrawals
+  'withdrawal', 'cash withdrawal',
+  'atm withdrawal', 'atm cash',
+  'cash out', 'atm debit',
+  'pos withdrawal', 'self withdrawal',
+  
+  // Purchases & POS
+  'purchase', 'pos purchase', 'pos debit',
+  'card purchase', 'card payment',
+  'contactless', 'tap to pay',
+  'web purchase', 'online purchase',
+  'e-commerce', 'ecommerce',
+  
+  // Debits
+  'debit', 'dr ', ' dr', 'debited',
+  'account debited', 'funds debited',
+  'direct debit',
+  
+  // Payments made
+  'payment to', 'paid to', 'pay to',
+  'bill payment', 'utility payment',
+  'invoice payment to',
+  
+  // Fees & charges
+  'fee', 'charge', 'service charge',
+  'maintenance fee', 'account fee',
+  'transaction fee', 'processing fee',
+  'bank charge', 'banking fee',
+  'commission charge', 'stamp duty',
+  'vat charge', 'tax deduction',
+  'withholding tax', 'wht',
+  'sms alert charge', 'sms fee',
+  'card maintenance', 'annual fee',
+  
+  // Bills
+  'electricity', 'power bill', 'nepa',
+  'phcn', 'ekedc', 'ikedc', 'eedc',
+  'water bill', 'gas bill',
+  'internet', 'broadband', 'wifi',
+  'cable tv', 'dstv', 'gotv', 'startimes',
+  'phone bill', 'airtime', 'data',
+  'insurance premium', 'premium payment',
+  'rent payment', 'house rent',
+  'school fees', 'tuition',
+  
+  // International
+  'swift debit', 'wire transfer out',
+  'international transfer out',
+  'foreign outward remittance',
+  'forex debit', 'domiciliary debit',
+  
+  // African specific
+  'nibss debit', 'nip debit',
+  'interbank transfer debit',
+  'mobile money debit', 'momo debit',
+  'mpesa debit', 'm-pesa out',
+  'airtel money debit', 'mtn momo out',
+  'paybill', 'till number',
+  
+  // Asian specific  
+  'upi payment', 'neft debit',
+  'rtgs debit', 'imps debit',
+  
+  // European specific
+  'sepa debit', 'sepa payment',
+  'bacs debit', 'faster payment out',
+  'standing order debit', 'direct debit',
+  
+  // US specific
+  'ach debit', 'ach payment',
+  'check payment', 'cheque payment',
+  'zelle payment', 'venmo payment',
+  
+  // Loans
+  'loan repayment', 'loan deduction',
+  'emi', 'mortgage payment',
+  'overdraft debit', 'loan recovery',
+  
+  // Shopping
+  'supermarket', 'grocery', 'groceries',
+  'restaurant', 'food', 'dining',
+  'fuel', 'petrol', 'gas station',
+  'transport', 'uber', 'bolt', 'taxify',
+  'airline', 'flight', 'hotel',
+  
+  // Other
+  'subscription', 'netflix', 'spotify',
+  'amazon', 'apple', 'google pay out',
+  'donation', 'charity'
+]
+
+// Terms that are NEITHER (skip these rows)
+const SKIP_KEYWORDS = [
+  'opening balance', 'closing balance',
+  'brought forward', 'carried forward',
+  'b/f', 'c/f', 'b/fwd', 'c/fwd',
+  'total debit', 'total credit',
+  'total', 'sub total', 'subtotal',
+  'available balance', 'ledger balance',
+  'current balance', 'book balance',
+  'running balance', 'account balance',
+  'statement of account',
+  'account number', 'account name',
+  'sort code', 'bvn', 'branch',
+  'page', 'continued', 'statement period'
+]
+
+function detectTransactionType(
+  description: string,
+  amount: number,
+  isNegative: boolean,
+  hasDebitCol: boolean,
+  hasCreditCol: boolean,
+  debitValue: number | null,
+  creditValue: number | null
+): 'income' | 'expense' {
+  
+  const desc = description.toLowerCase()
+  
+  // Method 1: Separate debit/credit columns
+  if (hasDebitCol && hasCreditCol) {
+    if (creditValue && creditValue > 0) return 'income'
+    if (debitValue && debitValue > 0) return 'expense'
+  }
+  
+  // Method 2: Check skip keywords first
+  for (const skip of SKIP_KEYWORDS) {
+    if (desc.includes(skip)) return null // skip this row
+  }
+  
+  // Method 3: Check income keywords
+  for (const keyword of INCOME_KEYWORDS) {
+    if (desc.includes(keyword)) return 'income'
+  }
+  
+  // Method 4: Check expense keywords  
+  for (const keyword of EXPENSE_KEYWORDS) {
+    if (desc.includes(keyword)) return 'expense'
+  }
+  
+  // Method 5: Amount sign
+  if (isNegative) return 'expense'
+  if (amount > 0 && !isNegative) return 'income'
+  
+  // Method 6: Default to expense if unsure
+  // (most transactions are expenses)
+  return 'expense'
+}
+
+═══════════════════════════════════════════════
+PART 2 — UNIVERSAL AMOUNT PARSER
+═══════════════════════════════════════════════
+Handle every currency format worldwide:
+
+function parseAmount(str: string): {
+  value: number, 
+  isNegative: boolean,
+  currency: string | null
+} {
+  if (!str || str.trim() === '' || 
+      str.trim() === '-' || str.trim() === '0') {
+    return { value: 0, isNegative: false, currency: null }
+  }
+  
+  let s = str.trim()
+  let isNegative = false
+  let currency = null
+  
+  // Detect negative: minus sign or parentheses
+  if (s.startsWith('-') || s.startsWith('(') || 
+      s.endsWith(')') || s.includes('DR') || 
+      s.includes(' dr')) {
+    isNegative = true
+  }
+  
+  // Extract currency symbols and codes
+  const currencyMap = {
+    '$': 'USD', '£': 'GBP', '€': 'EUR',
+    '₦': 'NGN', '₵': 'GHS', 'GHc': 'GHS',
+    '₹': 'INR', '¥': 'JPY', '¥': 'CNY',
+    'R': 'ZAR', 'KSh': 'KES', 'USh': 'UGX',
+    'TSh': 'TZS', 'RWF': 'RWF', 'XOF': 'XOF',
+    'XAF': 'XAF', 'ETB': 'ETB', 'GHS': 'GHS',
+    'NGN': 'NGN', 'USD': 'USD', 'GBP': 'GBP',
+    'EUR': 'EUR', 'CAD': 'CAD', 'AUD': 'AUD',
+    'ZAR': 'ZAR', 'KES': 'KES', 'INR': 'INR',
+    'JPY': 'JPY', 'CNY': 'CNY', 'BRL': 'BRL',
+    'MXN': 'MXN', 'AED': 'AED', 'SAR': 'SAR',
+    'CHF': 'CHF', 'SEK': 'SEK', 'NOK': 'NOK',
+    'DKK': 'DKK', 'PLN': 'PLN', 'CZK': 'CZK',
+    'HUF': 'HUF', 'MYR': 'MYR', 'SGD': 'SGD',
+    'HKD': 'HKD', 'THB': 'THB', 'IDR': 'IDR',
+    'PHP': 'PHP', 'PKR': 'PKR', 'BDT': 'BDT',
+    'EGP': 'EGP', 'MAD': 'MAD', 'TND': 'TND'
+  }
+  
+  for (const [symbol, code] of Object.entries(currencyMap)) {
+    if (s.includes(symbol)) {
+      currency = code
+      s = s.replace(symbol, '')
+      break
+    }
+  }
+  
+  // Remove parentheses, DR/CR labels
+  s = s.replace(/[()DR]/gi, '')
+       .replace(/\s+/g, '')
+  
+  // Handle European format: 1.234,56 → 1234.56
+  // Detect: if comma comes after dot → European format
+  if (/\d+\.\d{3},\d{2}/.test(s)) {
+    s = s.replace(/\./g, '').replace(',', '.')
+  }
+  // Handle: 1,234.56 → standard
+  else {
+    s = s.replace(/,/g, '')
+  }
+  
+  const value = Math.abs(parseFloat(s))
+  
+  if (isNaN(value) || value === 0) {
+    return { value: 0, isNegative: false, currency: null }
+  }
+  
+  return { value, isNegative, currency }
+}
+
+═══════════════════════════════════════════════
+PART 3 — UNIVERSAL DATE PARSER
+═══════════════════════════════════════════════
+
+function parseDate(str: string): string | null {
+  if (!str || str.trim() === '') return null
+  
+  const s = str.trim()
+  
+  // Try these patterns in order:
+  const patterns = [
+    // DD/MM/YYYY or DD-MM-YYYY
+    { regex: /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/, 
+      parse: (m) => `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` },
+    // YYYY-MM-DD or YYYY/MM/DD
+    { regex: /(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/, 
+      parse: (m) => `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}` },
+    // DD MMM YYYY (01 Mar 2026)
+    { regex: /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})/i,
+      parse: (m) => {
+        const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',
+                       jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'}
+        return `${m[3]}-${months[m[2].toLowerCase().slice(0,3)]}-${m[1].padStart(2,'0')}`
+      }
+    },
+    // MMM DD YYYY (Mar 01 2026)
+    { regex: /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{1,2}),?\s+(\d{4})/i,
+      parse: (m) => {
+        const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',
+                       jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'}
+        return `${m[3]}-${months[m[1].toLowerCase().slice(0,3)]}-${m[2].padStart(2,'0')}`
+      }
+    },
+    // DDMMMYYYY (01Mar2026)
+    { regex: /(\d{2})(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(\d{4})/i,
+      parse: (m) => {
+        const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',
+                       jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'}
+        return `${m[3]}-${months[m[2].toLowerCase().slice(0,3)]}-${m[1]}`
+      }
+    },
+    // DD/MM/YY
+    { regex: /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/,
+      parse: (m) => {
+        const year = parseInt(m[3]) > 50 
+          ? '19'+m[3] : '20'+m[3]
+        return `${year}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`
+      }
+    },
+    // MM/DD/YYYY (US format — only if month ≤ 12 AND day > 12)
+    { regex: /(\d{1,2})[\/](\d{1,2})[\/](\d{4})/,
+      parse: (m) => {
+        // Ambiguous — default to DD/MM/YYYY unless
+        // first number > 12 (must be a day in MM/DD)
+        // or second number > 12 (must be a day in DD/MM)
+        const a = parseInt(m[1]), b = parseInt(m[2])
+        if (a > 12) {
+          // first is day, second is month (DD/MM)
+          return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`
+        } else if (b > 12) {
+          // second is day, first is month (MM/DD)  
+          return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`
+        } else {
+          // Truly ambiguous — default DD/MM/YYYY
+          return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`
+        }
+      }
+    }
+  ]
+  
+  for (const { regex, parse } of patterns) {
+    const match = s.match(regex)
+    if (match) {
+      const result = parse(match)
+      // Validate the result
+      const d = new Date(result)
+      if (!isNaN(d.getTime()) && 
+          d.getFullYear() >= 2000 && 
+          d.getFullYear() <= 2030) {
+        return result
+      }
+    }
+  }
+  
+  return null
+}
+
+═══════════════════════════════════════════════
+PART 4 — BANK NAME DETECTION
+═══════════════════════════════════════════════
+Try to detect which bank the statement is from
+and show it to the user:
+
+function detectBank(text: string): string {
+  const t = text.toLowerCase()
+  
+  const banks = {
+    // Nigeria
+    'Guaranty Trust Bank (GTBank)': 
+      ['guaranty trust', 'gtbank', 'gtb'],
+    'Access Bank': 
+      ['access bank', 'access diamond'],
+    'United Bank for Africa (UBA)': 
+      ['united bank for africa', ' uba '],
+    'Zenith Bank': 
+      ['zenith bank'],
+    'First Bank of Nigeria': 
+      ['first bank', 'firstbank'],
+    'Stanbic IBTC': 
+      ['stanbic ibtc', 'stanbic'],
+    'FCMB': 
+      ['first city monument', 'fcmb'],
+    'Fidelity Bank': 
+      ['fidelity bank'],
+    'Union Bank': 
+      ['union bank'],
+    'Sterling Bank': 
+      ['sterling bank'],
+    'Polaris Bank': 
+      ['polaris bank', 'skye bank'],
+    'Wema Bank': 
+      ['wema bank'],
+    'Kuda Bank': 
+      ['kuda bank', 'kuda microfinance'],
+    'Opay': 
+      ['opay', 'paycom'],
+    'Palmpay': 
+      ['palmpay'],
+      
+    // Kenya
+    'Equity Bank Kenya': 
+      ['equity bank', 'equity group'],
+    'KCB Bank Kenya': 
+      ['kenya commercial bank', 'kcb'],
+    'Co-operative Bank Kenya': 
+      ['co-operative bank', 'co-op bank'],
+    'ABSA Bank Kenya': 
+      ['absa bank', 'barclays kenya'],
+    'M-Pesa (Safaricom)': 
+      ['safaricom', 'm-pesa', 'mpesa'],
+      
+    // Ghana
+    'GCB Bank': 
+      ['gcb bank', 'ghana commercial'],
+    'Ecobank Ghana': 
+      ['ecobank'],
+    'MTN Mobile Money': 
+      ['mtn momo', 'mobile money'],
+      
+    // South Africa
+    'Standard Bank SA': 
+      ['standard bank'],
+    'FNB South Africa': 
+      ['first national bank', ' fnb '],
+    'Nedbank': 
+      ['nedbank'],
+    'ABSA South Africa': 
+      ['absa bank'],
+    'Capitec Bank': 
+      ['capitec'],
+      
+    // UK
+    'Barclays UK': 
+      ['barclays bank'],
+    'HSBC UK': 
+      ['hsbc'],
+    'Lloyds Bank': 
+      ['lloyds bank'],
+    'NatWest': 
+      ['natwest', 'national westminster'],
+    'Monzo': 
+      ['monzo'],
+    'Revolut': 
+      ['revolut'],
+    'Starling Bank': 
+      ['starling bank'],
+      
+    // US
+    'Chase Bank': 
+      ['jpmorgan chase', 'chase bank'],
+    'Bank of America': 
+      ['bank of america'],
+    'Wells Fargo': 
+      ['wells fargo'],
+    'Citibank': 
+      ['citibank', 'citi bank'],
+      
+    // International
+    'PayPal': 
+      ['paypal'],
+    'Wise (TransferWise)': 
+      ['transferwise', 'wise.com'],
+    'Payoneer': 
+      ['payoneer'],
+  }
+  
+  for (const [bankName, keywords] of Object.entries(banks)) {
+    for (const keyword of keywords) {
+      if (t.includes(keyword)) return bankName
+    }
+  }
+  
+  return 'Unknown Bank'
+}
+
+═══════════════════════════════════════════════
+PART 5 — CURRENCY AUTO-DETECTION
+═══════════════════════════════════════════════
+Detect the document's primary currency and 
+use it for all transactions instead of defaulting 
+to USD:
+
+function detectCurrency(text: string): string {
+  const t = text
+  
+  // Count currency symbol occurrences
+  const counts = {
+    'NGN': (t.match(/₦|NGN/g) || []).length,
+    'GHS': (t.match(/₵|GHc|GHS/g) || []).length,
+    'KES': (t.match(/KSh|KES/g) || []).length,
+    'ZAR': (t.match(/ZAR|\bR\b/g) || []).length,
+    'GBP': (t.match(/£|GBP/g) || []).length,
+    'EUR': (t.match(/€|EUR/g) || []).length,
+    'USD': (t.match(/\$|USD/g) || []).length,
+    'INR': (t.match(/₹|INR/g) || []).length,
+    'UGX': (t.match(/USh|UGX/g) || []).length,
+    'TZS': (t.match(/TSh|TZS/g) || []).length,
+  }
+  
+  // Return the most frequently appearing currency
+  const sorted = Object.entries(counts)
+    .sort(([,a],[,b]) => b - a)
+  
+  if (sorted[0][1] > 0) return sorted[0][0]
+  
+  return 'USD' // fallback
+}
+
+═══════════════════════════════════════════════
+PART 6 — FINAL PARSE RESULT FORMAT
+═══════════════════════════════════════════════
+Every parse (CSV or PDF) must return:
+{
+  success: boolean,
+  bank: string, // detected bank name
+  currency: string, // detected currency
+  transactions: [
+    {
+      date: 'YYYY-MM-DD',
+      description: string,
+      amount: number, // always positive
+      type: 'income' | 'expense',
+      currency: string,
+      confidence: 'high' | 'medium' | 'low'
+    }
+  ],
+  totalFound: number,
+  skipped: number,
+  warning: string | null,
+  parseMethod: 'csv' | 'pdf-table' | 'pdf-lines'
+}
+
+Show bank name and currency on the review screen:
+"Found 45 transactions from [Bank Name]
+ Currency detected: NGN (Nigerian Naira)"
+
+═══════════════════════════════════════════════
+PART 7 — UPDATE FRONTEND REVIEW SCREEN
+═══════════════════════════════════════════════
+
+After successful parse, show at top of review:
+- Bank name detected (if known)
+- Currency detected  
+- Parse method used
+- Number found vs skipped
+
+For each transaction row, add:
+- Currency flag emoji based on currency:
+  NGN → 🇳🇬, GBP → 🇬🇧, USD → 🇺🇸,
+  EUR → 🇪🇺, KES → 🇰🇪, GHS → 🇬🇭,
+  ZAR → 🇿🇦, INR → 🇮🇳, etc.
+
+Allow user to change currency for individual 
+transactions if auto-detection was wrong:
+Small dropdown on each row showing currency.
+
+═══════════════════════════════════════════════
+FINAL STEPS
+═══════════════════════════════════════════════
+After rebuilding:
+1. npm install pdf-parse csv-parse
+2. cd client && npm run build
+3. Restart server
+
+Test with these scenarios:
+A) CSV with "Inward Transfer" → must be income
+B) CSV with "Outward Transfer" → must be expense  
+C) CSV with "NIP Credit" → must be income
+D) CSV with "POS Purchase" → must be expense
+E) CSV with no headers → must still parse
+F) PDF with ₦ amounts → currency = NGN
+G) Any real bank statement you have
+
+For each test show:
+- Bank detected
+- Currency detected  
+- Number of transactions found
+- Income vs expense breakdown
+- Any rows that were skipped and why

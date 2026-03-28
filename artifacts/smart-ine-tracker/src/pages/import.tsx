@@ -7,6 +7,31 @@ const GREEN = "#00D37F";
 const RED = "#FF4757";
 const AMBER = "#FFB800";
 
+const CURRENCY_FLAGS: Record<string, string> = {
+  USD: "🇺🇸", GBP: "🇬🇧", EUR: "🇪🇺", NGN: "🇳🇬", GHS: "🇬🇭",
+  KES: "🇰🇪", ZAR: "🇿🇦", INR: "🇮🇳", UGX: "🇺🇬", TZS: "🇹🇿",
+  CAD: "🇨🇦", AUD: "🇦🇺", SGD: "🇸🇬", HKD: "🇭🇰", JPY: "🇯🇵",
+  CNY: "🇨🇳", BRL: "🇧🇷", MXN: "🇲🇽", AED: "🇦🇪", SAR: "🇸🇦",
+  CHF: "🇨🇭", SEK: "🇸🇪", NOK: "🇳🇴", DKK: "🇩🇰", PLN: "🇵🇱",
+  MYR: "🇲🇾", THB: "🇹🇭", IDR: "🇮🇩", PHP: "🇵🇭", PKR: "🇵🇰",
+  BDT: "🇧🇩", EGP: "🇪🇬",
+};
+
+const COMMON_CURRENCIES = [
+  "USD","GBP","EUR","NGN","GHS","KES","ZAR","INR","CAD","AUD",
+  "SGD","HKD","JPY","CNY","AED","SAR","BRL","MXN","UGX","TZS",
+];
+
+function currencyFlag(code: string) {
+  return CURRENCY_FLAGS[code] ?? "💱";
+}
+
+const PARSE_METHOD_LABEL: Record<string, string> = {
+  "csv": "CSV",
+  "pdf-table": "PDF table",
+  "pdf-lines": "PDF text",
+};
+
 interface ParsedTx {
   date: string;
   description: string;
@@ -45,6 +70,10 @@ export default function Import() {
   const [filename, setFilename] = useState("");
   const [txList, setTxList] = useState<ReviewTx[]>([]);
   const [duplicateCount, setDuplicateCount] = useState(0);
+  const [detectedBank, setDetectedBank] = useState("");
+  const [detectedCurrency, setDetectedCurrency] = useState("");
+  const [parseMethod, setParseMethod] = useState("");
+  const [skippedCount, setSkippedCount] = useState(0);
 
   const [successData, setSuccessData] = useState<{ imported: number; income: number; expense: number; net: number } | null>(null);
   const [history, setHistory] = useState<any[]>([]);
@@ -113,6 +142,10 @@ export default function Import() {
       setImportId(data.import_id);
       setFilename(data.filename);
       setDuplicateCount(data.duplicate_count ?? 0);
+      setDetectedBank(data.bank ?? "");
+      setDetectedCurrency(data.detected_currency ?? "");
+      setParseMethod(data.parse_method ?? "");
+      setSkippedCount(data.skipped ?? 0);
       setTxList(data.transactions.map((tx: ParsedTx) => ({
         ...tx,
         selected: !tx.is_duplicate && tx.confidence !== "low",
@@ -165,7 +198,9 @@ export default function Import() {
   };
 
   const reset = () => {
-    setFile(null); setStage("idle"); setTxList([]); setImportId(""); setFilename(""); setErrorMsg(""); setSuccessData(null); setDuplicateCount(0);
+    setFile(null); setStage("idle"); setTxList([]); setImportId(""); setFilename("");
+    setErrorMsg(""); setSuccessData(null); setDuplicateCount(0);
+    setDetectedBank(""); setDetectedCurrency(""); setParseMethod(""); setSkippedCount(0);
   };
 
   const selectedCount = txList.filter((t) => t.selected).length;
@@ -314,7 +349,29 @@ export default function Import() {
         {stage === "review" && (
           <>
             <div className="rounded-xl p-3 mb-3 text-sm font-medium" style={{ background: "rgba(0,211,127,0.12)", color: "#007a4a" }}>
-              ✅ Found <strong>{txList.length}</strong> transactions in <strong>{filename}</strong>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  ✅ Found <strong>{txList.length}</strong> transactions in <strong>{filename}</strong>
+                  {skippedCount > 0 && (
+                    <span className="ml-1 font-normal" style={{ color: "#007a4a", opacity: 0.8 }}>
+                      ({skippedCount} skipped)
+                    </span>
+                  )}
+                </div>
+                {parseMethod && (
+                  <span className="text-xs px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(0,0,0,0.08)", color: "#007a4a" }}>
+                    {PARSE_METHOD_LABEL[parseMethod] ?? parseMethod}
+                  </span>
+                )}
+              </div>
+              {(detectedBank && detectedBank !== "Unknown Bank") && (
+                <div className="text-xs mt-1 font-semibold" style={{ color: "#007a4a" }}>🏦 {detectedBank}</div>
+              )}
+              {detectedCurrency && (
+                <div className="text-xs mt-0.5" style={{ color: "#007a4a" }}>
+                  {currencyFlag(detectedCurrency)} Currency detected: <strong>{detectedCurrency}</strong>
+                </div>
+              )}
               <div className="text-xs mt-0.5 font-normal" style={{ color: "#007a4a" }}>Review and select which ones to import</div>
             </div>
 
@@ -348,9 +405,12 @@ export default function Import() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">
                       <span className="text-xs text-gray-400">{tx.date}</span>
-                      <span className="font-bold text-sm" style={{ color: tx.type === "income" ? GREEN : RED }}>
-                        {tx.type === "income" ? "+" : "-"}${fmt(tx.amount)}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-mono text-gray-400">{currencyFlag(tx.currency)} {tx.currency}</span>
+                        <span className="font-bold text-sm" style={{ color: tx.type === "income" ? GREEN : RED }}>
+                          {tx.type === "income" ? "+" : "-"}{fmt(tx.amount)}
+                        </span>
+                      </div>
                     </div>
                     <p className="text-sm font-medium text-gray-800 truncate">{tx.description}</p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
@@ -367,6 +427,21 @@ export default function Import() {
                       >
                         {tx.type === "income" ? "💰 Income" : "💸 Expense"}
                       </button>
+                      <select
+                        onClick={(e) => e.stopPropagation()}
+                        value={tx.currency}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          const newCur = e.target.value;
+                          setTxList((l) => l.map((t, j) => j === i ? { ...t, currency: newCur } : t));
+                        }}
+                        className="text-xs rounded-full border px-1.5 py-0.5 font-semibold bg-white border-gray-200 text-gray-600"
+                        style={{ maxWidth: 90 }}
+                      >
+                        {COMMON_CURRENCIES.map((c) => (
+                          <option key={c} value={c}>{currencyFlag(c)} {c}</option>
+                        ))}
+                      </select>
                       {tx.is_duplicate && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(255,184,0,0.18)", color: "#7a5200" }}>🔄 Possible duplicate</span>
                       )}

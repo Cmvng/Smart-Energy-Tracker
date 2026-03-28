@@ -95,6 +95,10 @@ router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
       transactions: txsWithDupes,
       count: txsWithDupes.length,
       duplicate_count: txsWithDupes.filter((t) => t.is_duplicate).length,
+      bank: result.bank,
+      detected_currency: result.detected_currency,
+      parse_method: result.parse_method,
+      skipped: result.skipped ?? 0,
     });
   });
 });
