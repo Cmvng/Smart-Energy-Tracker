@@ -1,0 +1,106 @@
+Fix the date parsing bug in server/excel_parser.py
+
+The current parse_date function has a bug:
+05/01/26 is being parsed as 2026-05-01 (May 1)
+instead of 2026-01-05 (January 5)
+
+The bug is in this logic:
+  if a > 12: d,mo = str(a).zfill(2),str(b).zfill(2)
+  else: d,mo = str(b).zfill(2),str(a).zfill(2)
+
+For 05/01/26: a=5, b=1. Since 5 is NOT > 12,
+it sets d=1, mo=5 → May 1st. WRONG.
+
+Nigerian banks (and most world banks) use DD/MM/YY
+format. First number is ALWAYS the day.
+
+Replace the entire parse_date function with this:
+
+def parse_date(s):
+    if not s: return None
+    s = str(s).strip().split(' ')[0]
+    
+    # DD/MM/YY or DD/MM/YYYY - always day first
+    m = re.match(
+        r'^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$', s
+    )
+    if m:
+        day, month, year_raw = m.groups()
+        day = day.zfill(2)
+        month = month.zfill(2)
+        yr = int(year_raw)
+        if yr < 100:
+            year = str(2000+yr) if yr < 50 else str(1900+yr)
+        else:
+            year = str(yr)
+        try:
+            dt = datetime.strptime(
+                f'{year}-{month}-{day}', '%Y-%m-%d'
+            )
+            if 2000 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+        except: pass
+    
+    # YYYY-MM-DD (ISO format)
+    m = re.match(
+        r'^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$', s
+    )
+    if m:
+        y, mo, d = m.groups()
+        try:
+            dt = datetime.strptime(
+                f'{y}-{mo.zfill(2)}-{d.zfill(2)}',
+                '%Y-%m-%d'
+            )
+            if 2000 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+        except: pass
+    
+    # DD MMM YYYY (e.g. 05 Jan 2026)
+    months = {
+        'jan':'01','feb':'02','mar':'03','apr':'04',
+        'may':'05','jun':'06','jul':'07','aug':'08',
+        'sep':'09','oct':'10','nov':'11','dec':'12'
+    }
+    m = re.search(
+        r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|'
+        r'Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})',
+        s, re.IGNORECASE
+    )
+    if m:
+        d, mn, y = m.groups()
+        mo = months[mn.lower()[:3]]
+        try:
+            dt = datetime.strptime(
+                f'{y}-{mo}-{d.zfill(2)}', '%Y-%m-%d'
+            )
+            if 2000 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+        except: pass
+    
+    return None
+
+After updating the file:
+1. Delete the imported transactions that have 
+   wrong dates - run this SQL:
+   DELETE FROM transactions 
+   WHERE import_id IN (
+     SELECT id FROM document_imports 
+     WHERE user_id = (
+       SELECT id FROM users 
+       WHERE email = 'cmvceo1000@gmail.com'
+     )
+   );
+   DELETE FROM document_imports 
+   WHERE user_id = (
+     SELECT id FROM users 
+     WHERE email = 'cmvceo1000@gmail.com'
+   );
+
+2. Restart server (no build needed - 
+   Python file changes take effect immediately)
+
+3. Upload Customer Statement.xlsx again
+
+4. Confirm dates show January, February, March 2026
+   NOT May, December etc.

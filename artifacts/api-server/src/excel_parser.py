@@ -12,34 +12,53 @@ def clean_amount(s):
 def parse_date(s):
     if not s: return None
     s = str(s).strip().split(' ')[0]
-    patterns = [
-        (r'(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})', 'dmy4'),
-        (r'(\d{1,2})[/\-](\d{1,2})[/\-](\d{2})$', 'dmy2'),
-        (r'(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})', 'ymd'),
-        (r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})', 'dMy'),
-    ]
-    months = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05',
-              'jun':'06','jul':'07','aug':'08','sep':'09','oct':'10',
-              'nov':'11','dec':'12'}
-    for pattern, fmt in patterns:
-        m = re.search(pattern, s, re.IGNORECASE)
-        if m:
-            try:
-                g = m.groups()
-                if fmt == 'ymd': y,mo,d = g[0],g[1].zfill(2),g[2].zfill(2)
-                elif fmt == 'dMy': y,mo,d = g[2],months[g[1].lower()[:3]],g[0].zfill(2)
-                elif fmt == 'dmy2':
-                    n = int(g[2]); y = str(2000+n) if n<50 else str(1900+n)
-                    a,b = int(g[0]),int(g[1])
-                    if a>12: d,mo = str(a).zfill(2),str(b).zfill(2)
-                    else: d,mo = str(b).zfill(2),str(a).zfill(2)
-                else:
-                    a,b,y = int(g[0]),int(g[1]),g[2]
-                    if a>12: d,mo = str(a).zfill(2),str(b).zfill(2)
-                    else: d,mo = str(b).zfill(2),str(a).zfill(2)
-                dt = datetime.strptime(f'{y}-{mo}-{d}','%Y-%m-%d')
-                if 2000<=dt.year<=2030: return dt.strftime('%Y-%m-%d')
-            except: continue
+
+    # DD/MM/YY or DD/MM/YYYY - always day first (Nigerian/UK bank format)
+    m = re.match(r'^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$', s)
+    if m:
+        day, month, year_raw = m.groups()
+        day = day.zfill(2)
+        month = month.zfill(2)
+        yr = int(year_raw)
+        if yr < 100:
+            year = str(2000+yr) if yr < 50 else str(1900+yr)
+        else:
+            year = str(yr)
+        try:
+            dt = datetime.strptime(f'{year}-{month}-{day}', '%Y-%m-%d')
+            if 2000 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+        except: pass
+
+    # YYYY-MM-DD (ISO format)
+    m = re.match(r'^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$', s)
+    if m:
+        y, mo, d = m.groups()
+        try:
+            dt = datetime.strptime(f'{y}-{mo.zfill(2)}-{d.zfill(2)}', '%Y-%m-%d')
+            if 2000 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+        except: pass
+
+    # DD MMM YYYY (e.g. 05 Jan 2026)
+    months = {
+        'jan':'01','feb':'02','mar':'03','apr':'04',
+        'may':'05','jun':'06','jul':'07','aug':'08',
+        'sep':'09','oct':'10','nov':'11','dec':'12'
+    }
+    m = re.search(
+        r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})',
+        s, re.IGNORECASE
+    )
+    if m:
+        d, mn, y = m.groups()
+        mo = months[mn.lower()[:3]]
+        try:
+            dt = datetime.strptime(f'{y}-{mo}-{d.zfill(2)}', '%Y-%m-%d')
+            if 2000 <= dt.year <= 2030:
+                return dt.strftime('%Y-%m-%d')
+        except: pass
+
     return None
 
 INCOME_CATS = ['inward','credit','reversal','refund',
