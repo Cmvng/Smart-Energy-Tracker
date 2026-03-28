@@ -1,0 +1,79 @@
+The Excel parser needs to handle this specific 
+bank statement format. I have analysed the actual 
+file and here is exactly how it is structured:
+
+Sheet name: Sheet1
+Data starts at ROW 17 (header is row 16)
+Columns (0-indexed):
+  col 2 (C): Date/Time  format: DD/MM/YY HH:MM:SS
+  col 4 (E): Money In   (income amounts with ₦)
+  col 6 (G): Money out  (expense amounts with ₦)
+  col 8 (I): Category   e.g. 'outward transfer', 'inward transfer'
+  col 10 (K): To/From   merchant/person name
+  col 12 (M): Description  transaction note
+  col 14 (O): Balance   (skip this column)
+
+The header row contains: 
+'Date/Time', 'Money In', 'Money out', 
+'Category', 'To / From', 'Description', 'Balance'
+
+The current parser fails because:
+1. It looks for headers like 'date','description','amount'
+   but this bank uses 'Date/Time','Money In','Money out'
+2. Data starts at column C (index 2) not column A
+3. Rows 1-15 are account summary info, not transactions
+
+Fix the Excel parser to handle this format:
+
+In excelToCSV() or the Excel processing function,
+after converting xlsx to rows, add this 
+smart detection logic:
+
+1. Find the header row by scanning all rows 
+   for cells containing 'Money In' OR 'Money out'
+   OR 'Date/Time' (case insensitive)
+   
+2. Once header row is found, map columns:
+   - Find column with 'date' or 'date/time' → date col
+   - Find column with 'money in' or 'credit' → income col
+   - Find column with 'money out' or 'debit' → expense col  
+   - Find column with 'description' OR 'narration' 
+     OR 'to / from' OR 'to/from' → desc col
+   - Find column with 'category' → category col
+   - Find column with 'balance' → SKIP this column
+
+3. For each data row after the header:
+   - Parse date: handle DD/MM/YY HH:MM:SS format
+     strip the time part, parse DD/MM/YY
+     convert 2-digit year: 26 → 2026
+   - Get income amount from money_in column
+     (remove ₦ symbol and commas)
+   - Get expense amount from money_out column
+     (remove ₦ symbol and commas)
+   - Determine type:
+     if money_in has a value AND money_out is empty → income
+     if money_out has a value AND money_in is empty → expense
+     Also check category column:
+       'inward transfer' → income
+       'outward transfer' → expense
+       'reversal' → income
+       'web payment' → expense
+   - Description: use description col first, 
+     then to/from col, then category col as fallback
+   - Skip rows where BOTH money_in and money_out are empty
+
+4. Build the output in the same format as the 
+   existing CSV parser returns:
+   { date, description, amount, type, currency: 'NGN', confidence: 'high' }
+
+This same smart detection also needs to work for 
+other banks that might use similar column naming.
+
+The key insight is: NEVER hardcode column indices.
+Always FIND the columns by their header names.
+
+After fixing rebuild and test with the 
+Customer Statement.xlsx file.
+The expected result is approximately 289 
+transactions with a mix of income and expenses.
+Show the count and first 5 transactions in console.

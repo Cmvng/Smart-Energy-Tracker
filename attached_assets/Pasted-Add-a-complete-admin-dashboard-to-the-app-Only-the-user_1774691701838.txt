@@ -1,0 +1,180 @@
+Add a complete admin dashboard to the app.
+Only the user with email cmvceo1000@gmail.com 
+can access it.
+
+═══════════════════════════════════════════════
+DATABASE CHANGES
+═══════════════════════════════════════════════
+ALTER TABLE users 
+  ADD COLUMN IF NOT EXISTS is_admin boolean DEFAULT false;
+
+UPDATE users SET is_admin = true 
+  WHERE email = 'cmvceo1000@gmail.com';
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES users(id),
+  rating integer,
+  message text,
+  page text,
+  created_at timestamptz DEFAULT now()
+);
+
+═══════════════════════════════════════════════
+BACKEND ROUTES
+═══════════════════════════════════════════════
+All admin routes require JWT + is_admin = true.
+If not admin: return 403 { error: 'Unauthorized' }
+
+GET /api/admin/stats:
+Return:
+{
+  total_users: COUNT(*) FROM users,
+  new_today: COUNT WHERE created_at >= today,
+  new_this_week: COUNT WHERE created_at >= 7 days ago,
+  total_transactions: COUNT(*) FROM transactions 
+    WHERE deleted_at IS NULL,
+  transactions_today: COUNT WHERE created_at >= today,
+  active_today: COUNT DISTINCT account_id FROM 
+    transactions WHERE created_at >= today,
+  users_by_currency: SELECT home_currency, 
+    COUNT(*) as count FROM users 
+    GROUP BY home_currency ORDER BY count DESC,
+  recent_signups: SELECT u.id, u.name, u.email, 
+    u.nickname, u.mode, u.home_currency, 
+    u.created_at,
+    u.telegram_chat_id IS NOT NULL as telegram_connected,
+    COUNT(t.id) as transaction_count
+    FROM users u
+    LEFT JOIN accounts a ON a.user_id = u.id
+    LEFT JOIN transactions t ON t.account_id = a.id 
+      AND t.deleted_at IS NULL
+    GROUP BY u.id
+    ORDER BY u.created_at DESC
+    LIMIT 20
+}
+
+GET /api/admin/users:
+Return all users with transaction counts.
+Support ?search=email_or_name query param.
+
+GET /api/admin/feedback:
+Return all feedback ordered by created_at DESC.
+Include user name and email with each feedback row.
+
+POST /api/feedback:
+Accept { rating, message, page }
+Save to feedback table for current user.
+Return { success: true }
+
+GET /api/auth/me update:
+Add is_admin field to the response.
+
+═══════════════════════════════════════════════
+FRONTEND — ADMIN PAGE (/admin)
+═══════════════════════════════════════════════
+Create client/src/pages/admin.tsx
+
+Route protection:
+- If not logged in: redirect to /login
+- If logged in but is_admin = false: 
+  redirect to /dashboard immediately
+- Only render if user.is_admin = true
+
+ACCESS: Add small "Admin" link at the bottom 
+of Settings page, only visible when 
+user.is_admin = true. Style it as a subtle 
+grey text link.
+
+ADMIN PAGE LAYOUT (navy theme, full width):
+
+HEADER:
+Dark navy bar: "Admin Dashboard" left, 
+"Smart i-n-E Tracker" right
+Below: "Welcome back, [name]" subtitle
+
+STATS ROW (4 cards):
+Card 1: Total Users (big green number)
+Card 2: New Today (number)
+Card 3: Total Transactions (number)  
+Card 4: Active Today (number)
+
+USERS BY COUNTRY section:
+Title: "Users by Currency / Country"
+Horizontal bar chart or simple list:
+Each row: flag emoji + currency code + count + 
+progress bar showing proportion
+Flag mapping:
+NGN → 🇳🇬, GBP → 🇬🇧, USD → 🇺🇸,
+EUR → 🇪🇺, KES → 🇰🇪, GHS → 🇬🇭,
+ZAR → 🇿🇦, INR → 🇮🇳, AED → 🇦🇪,
+CAD → 🇨🇦, AUD → 🇦🇺, Others → 🌍
+
+RECENT SIGNUPS section:
+Title: "Recent Signups"
+Search input: filter by name or email
+Table/list with these columns:
+- Avatar circle with initials
+- Name + @nickname below
+- Email
+- Currency flag + code
+- Mode badge (Individual/Business)
+- Transactions count (green number)
+- Telegram connected (✅ or ➖)
+- Joined date (e.g. "2 hours ago")
+
+FEEDBACK section:
+Title: "User Feedback"
+Each feedback card:
+- Star rating shown as emoji 
+  (1=😡 2=😞 3=😐 4=😊 5=🤩)
+- Message text
+- User name + email small grey text
+- Page they were on
+- Time ago
+Empty state: "No feedback yet"
+
+REFRESH button top right: 
+Reloads all data from API
+
+Auto-refresh every 60 seconds.
+
+═══════════════════════════════════════════════
+FEEDBACK BUTTON (add to Settings page)
+═══════════════════════════════════════════════
+Add at the bottom of Settings page 
+above the logout button:
+
+"Send Feedback" button (outlined, full width)
+
+Opens a modal:
+Title: "How is your experience?"
+
+5 emoji rating buttons in a row:
+😡  😞  😐  😊  🤩
+1   2   3   4   5
+Selected emoji gets a highlighted border.
+
+Textarea below: 
+"Tell us more (optional)"
+placeholder: "What could be better?"
+max 500 characters
+
+"Send Feedback" submit button (green)
+
+On submit: POST /api/feedback
+On success: close modal, toast "✅ Thanks for 
+your feedback!"
+
+═══════════════════════════════════════════════
+FINAL STEPS
+═══════════════════════════════════════════════
+After building:
+1. cd client && npm run build
+2. Restart server
+3. Confirm UPDATE users SET is_admin = true 
+   ran for cmvceo1000@gmail.com
+4. Log in as cmvceo1000@gmail.com
+5. Go to Settings → confirm "Admin" link visible
+6. Go to /admin → confirm dashboard loads
+7. Confirm stats show real data from database
