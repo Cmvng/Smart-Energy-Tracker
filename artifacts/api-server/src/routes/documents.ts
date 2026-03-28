@@ -65,17 +65,36 @@ router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
       return;
     }
 
+    // Duplicate detection: check each parsed transaction against existing transactions
+    const [account] = await db.select().from(accountsTable).where(eq(accountsTable.user_id, req.userId!));
+    const txsWithDupes = await Promise.all(
+      result.transactions.map(async (tx) => {
+        if (!account) return { ...tx, is_duplicate: false };
+        const { rows } = await pool.query<{ cnt: string }>(
+          `SELECT COUNT(*) AS cnt FROM transactions
+           WHERE account_id = $1
+             AND deleted_at IS NULL
+             AND DATE(transacted_at) = $2
+             AND ABS(amount_original::numeric - $3::numeric) < 0.01
+             AND type = $4`,
+          [account.id, tx.date, tx.amount, tx.type]
+        );
+        return { ...tx, is_duplicate: parseInt(rows[0]?.cnt ?? "0", 10) > 0 };
+      })
+    );
+
     await db.update(documentImportsTable).set({
       status: "parsed",
-      total_found: result.transactions.length,
+      total_found: txsWithDupes.length,
     }).where(eq(documentImportsTable.id, importRecord.id));
 
     res.json({
       import_id: importRecord.id,
       filename,
       file_type: fileType,
-      transactions: result.transactions,
-      count: result.transactions.length,
+      transactions: txsWithDupes,
+      count: txsWithDupes.length,
+      duplicate_count: txsWithDupes.filter((t) => t.is_duplicate).length,
     });
   });
 });

@@ -14,6 +14,7 @@ interface ParsedTx {
   type: "income" | "expense";
   currency: string;
   confidence: "high" | "medium" | "low";
+  is_duplicate?: boolean;
 }
 
 interface ReviewTx extends ParsedTx {
@@ -43,6 +44,7 @@ export default function Import() {
   const [importId, setImportId] = useState("");
   const [filename, setFilename] = useState("");
   const [txList, setTxList] = useState<ReviewTx[]>([]);
+  const [duplicateCount, setDuplicateCount] = useState(0);
 
   const [successData, setSuccessData] = useState<{ imported: number; income: number; expense: number; net: number } | null>(null);
   const [history, setHistory] = useState<any[]>([]);
@@ -110,8 +112,11 @@ export default function Import() {
       }
       setImportId(data.import_id);
       setFilename(data.filename);
-      const defaultSelected = (tx: ParsedTx) => tx.confidence !== "low";
-      setTxList(data.transactions.map((tx: ParsedTx) => ({ ...tx, selected: defaultSelected(tx) })));
+      setDuplicateCount(data.duplicate_count ?? 0);
+      setTxList(data.transactions.map((tx: ParsedTx) => ({
+        ...tx,
+        selected: !tx.is_duplicate && tx.confidence !== "low",
+      })));
       setStage("review");
     } catch {
       setErrorMsg("Connection error. Please try again.");
@@ -160,7 +165,7 @@ export default function Import() {
   };
 
   const reset = () => {
-    setFile(null); setStage("idle"); setTxList([]); setImportId(""); setFilename(""); setErrorMsg(""); setSuccessData(null);
+    setFile(null); setStage("idle"); setTxList([]); setImportId(""); setFilename(""); setErrorMsg(""); setSuccessData(null); setDuplicateCount(0);
   };
 
   const selectedCount = txList.filter((t) => t.selected).length;
@@ -308,10 +313,16 @@ export default function Import() {
         {/* Review state */}
         {stage === "review" && (
           <>
-            <div className="rounded-xl p-3 mb-4 text-sm font-medium" style={{ background: "rgba(0,211,127,0.12)", color: "#007a4a" }}>
+            <div className="rounded-xl p-3 mb-3 text-sm font-medium" style={{ background: "rgba(0,211,127,0.12)", color: "#007a4a" }}>
               ✅ Found <strong>{txList.length}</strong> transactions in <strong>{filename}</strong>
               <div className="text-xs mt-0.5 font-normal" style={{ color: "#007a4a" }}>Review and select which ones to import</div>
             </div>
+
+            {duplicateCount > 0 && (
+              <div className="rounded-xl p-3 mb-3 text-sm font-medium" style={{ background: "rgba(255,184,0,0.12)", color: "#7a5200", border: "1px solid rgba(255,184,0,0.4)" }}>
+                ⚠️ <strong>{duplicateCount} possible duplicate{duplicateCount !== 1 ? "s" : ""}</strong> found and unchecked — review before importing
+              </div>
+            )}
 
             <div className="flex gap-2 mb-3">
               <button onClick={() => setTxList((l) => l.map((t) => ({ ...t, selected: true })))}
@@ -356,10 +367,13 @@ export default function Import() {
                       >
                         {tx.type === "income" ? "💰 Income" : "💸 Expense"}
                       </button>
-                      {tx.confidence === "medium" && (
+                      {tx.is_duplicate && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(255,184,0,0.18)", color: "#7a5200" }}>🔄 Possible duplicate</span>
+                      )}
+                      {tx.confidence === "medium" && !tx.is_duplicate && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(255,184,0,0.15)", color: "#996d00" }}>⚠️ Review</span>
                       )}
-                      {tx.confidence === "low" && (
+                      {tx.confidence === "low" && !tx.is_duplicate && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(255,71,87,0.12)", color: RED }}>❓ Check</span>
                       )}
                     </div>
@@ -431,6 +445,11 @@ export default function Import() {
           >
             Import {selectedCount} Transaction{selectedCount !== 1 ? "s" : ""} →
           </button>
+          {duplicateCount > 0 && (
+            <p className="text-center text-xs mt-2" style={{ color: "#7a5200" }}>
+              💡 Tip: Possible duplicates are unchecked by default to prevent double counting
+            </p>
+          )}
         </div>
       )}
     </div>
