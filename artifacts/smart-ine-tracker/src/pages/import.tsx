@@ -284,7 +284,7 @@ export default function Import() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen pb-24" style={{ background: "#F5F6FA", overflowX: "hidden", maxWidth: "100vw", width: "100%" }}>
+    <div className="flex flex-col min-h-screen pb-24" style={{ background: "#F5F6FA" }}>
       {/* Header */}
       <div className="text-white px-5 pt-12 pb-6" style={{ background: NAVY }}>
         <h1 className="text-2xl font-bold tracking-tight">Import Transactions</h1>
@@ -489,14 +489,14 @@ export default function Import() {
                 <div
                   key={i}
                   onClick={() => setTxList((l) => l.map((t, j) => j === i ? { ...t, selected: !t.selected } : t))}
-                  className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm cursor-pointer active:opacity-70"
-                  style={{ opacity: tx.selected ? 1 : 0.55, display: "grid", gridTemplateColumns: "24px 1fr auto", gap: "8px", alignItems: "start", width: "100%", overflow: "hidden" }}
+                  className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-start gap-3 cursor-pointer active:opacity-70"
+                  style={{ opacity: tx.selected ? 1 : 0.55 }}
                 >
                   <input type="checkbox" checked={tx.selected} readOnly
                     className="mt-0.5 w-5 h-5 rounded accent-[#00D37F] shrink-0" />
-                  <div className="flex-1" style={{ minWidth: 0, overflow: "hidden" }}>
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="text-xs text-gray-400">{new Date(tx.date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                      <span className="text-xs text-gray-400">{tx.date}</span>
                       <div className="flex items-center gap-1">
                         <span className="text-xs font-mono text-gray-400">{currencyFlag(tx.currency)} {tx.currency}</span>
                         <span className="font-bold text-sm" style={{ color: tx.type === "income" ? GREEN : RED }}>
@@ -504,7 +504,7 @@ export default function Import() {
                         </span>
                       </div>
                     </div>
-                    <p className="text-sm font-medium text-gray-800 truncate" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tx.description}</p>
+                    <p className="text-sm font-medium text-gray-800 truncate">{tx.description}</p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       <button
                         onClick={(e) => {
