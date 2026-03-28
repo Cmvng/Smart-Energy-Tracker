@@ -1,0 +1,93 @@
+The Tesseract OCR is working but too slow — 
+taking 2+ minutes on Replit's limited CPU.
+
+Fix this with three optimizations:
+
+OPTIMIZATION 1 — REDUCE IMAGE RESOLUTION:
+Change pdftoppm resolution from 200 DPI to 120 DPI.
+120 DPI is enough for Tesseract to read bank 
+statement text accurately but processes 3x faster.
+
+Change: -r 200 → -r 120
+
+OPTIMIZATION 2 — LIMIT PAGES:
+Most bank statements have the transaction data 
+on the first 5-8 pages. The last pages are usually 
+terms and conditions which we don't need.
+
+Add a page limit to pdftoppm:
+Only convert the first 8 pages maximum:
+Add flags: -f 1 -l 8
+(first page 1, last page 8)
+
+If the statement has fewer than 8 pages, 
+it will just process all pages normally.
+
+OPTIMIZATION 3 — PARALLEL PROCESSING:
+Instead of processing pages one by one 
+(sequential), process all pages at the same time 
+(parallel):
+
+Change from:
+for (const page of pages) {
+  const text = await ocrPage(page)
+  allText += text
+}
+
+To:
+const results = await Promise.all(
+  pages.map(page => ocrPage(page))
+)
+const allText = results.join('\n')
+
+This processes all pages simultaneously instead 
+of waiting for each one to finish.
+
+OPTIMIZATION 4 — ADD TIMEOUT:
+If OCR takes more than 60 seconds total, 
+stop and return what was found so far:
+
+Add a 60 second timeout to the entire OCR process.
+If timeout hits:
+- If any transactions were found: return them
+  with a warning "Partial results — statement 
+  may be incomplete due to processing time"
+- If no transactions found: return the amber 
+  locked PDF help card
+
+OPTIMIZATION 5 — BETTER LOADING MESSAGES:
+Update the frontend loading messages to show 
+progress so users know it's still working:
+
+Show page count in the message:
+"📸 Converting [X] pages to images..."
+"🔍 Reading page 1 of [X]..."
+"🔍 Reading page 2 of [X]..."
+etc.
+
+Add a progress percentage bar below the spinner.
+
+Also add this message after 30 seconds:
+"⏳ This is taking a bit longer than usual...
+ Secured PDFs need extra processing time.
+ Please keep this page open."
+
+OPTIMIZATION 6 — SHOW PARTIAL RESULTS:
+If OCR finds ANY transactions (even 1) 
+before the timeout, immediately show them 
+in the review screen without waiting for 
+all pages to finish.
+
+Use streaming approach:
+- Process page 1, if transactions found → 
+  add to review list immediately
+- Process page 2, add more transactions
+- Continue until all pages done or timeout
+- User sees results building up in real time
+
+After all optimizations, a 3-month statement 
+should process in 20-40 seconds instead of 
+2+ minutes.
+
+Rebuild: cd client && npm run build
+Restart server.

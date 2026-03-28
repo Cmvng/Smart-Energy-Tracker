@@ -65,6 +65,9 @@ export default function Import() {
   const [stage, setStage] = useState<"idle" | "scanning" | "review" | "importing" | "success" | "error" | "locked">("idle");
   const [scanMsg, setScanMsg] = useState("Reading your document...");
   const [errorMsg, setErrorMsg] = useState("");
+  const [ocrTotal, setOcrTotal] = useState(0);
+  const [ocrProcessed, setOcrProcessed] = useState(0);
+  const [showSlowMsg, setShowSlowMsg] = useState(false);
 
   const [importId, setImportId] = useState("");
   const [filename, setFilename] = useState("");
@@ -110,6 +113,13 @@ export default function Import() {
     return () => clearInterval(iv);
   }, [stage]);
 
+  // Show "taking longer than usual" message after 30 seconds of scanning
+  useEffect(() => {
+    if (stage !== "scanning") { setShowSlowMsg(false); return; }
+    const t = setTimeout(() => setShowSlowMsg(true), 30_000);
+    return () => clearTimeout(t);
+  }, [stage]);
+
   const handleFile = (f: File) => {
     const lc = f.name.toLowerCase();
     if (!lc.endsWith(".pdf") && !lc.endsWith(".csv")) {
@@ -127,42 +137,89 @@ export default function Import() {
     if (f) handleFile(f);
   };
 
+  const applyResult = (data: any) => {
+    setImportId(data.import_id);
+    setFilename(data.filename);
+    setDuplicateCount(data.duplicate_count ?? 0);
+    setDetectedBank(data.bank ?? "");
+    setDetectedCurrency(data.detected_currency ?? "");
+    setParseMethod(data.parse_method ?? "");
+    setSkippedCount(data.skipped ?? 0);
+    setTxList((data.transactions ?? []).map((tx: ParsedTx) => ({
+      ...tx,
+      selected: !tx.is_duplicate && tx.confidence !== "low",
+    })));
+    setStage("review");
+  };
+
   const handleScan = async () => {
     if (!file || !token) return;
     setStage("scanning");
     scanMsgRef.current = 0;
     setScanMsg("Reading your document...");
+    setOcrTotal(0);
+    setOcrProcessed(0);
+    setShowSlowMsg(false);
 
+    const isPDF = file.name.toLowerCase().endsWith(".pdf");
     const formData = new FormData();
     formData.append("document", file);
+
     try {
       const res = await fetch("/api/documents/upload", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      const data = await res.json();
-      if (data.locked) {
-        setStage("locked");
+
+      // ── PDF → read SSE stream ──────────────────────────────────────────────
+      if (isPDF && res.headers.get("content-type")?.includes("text/event-stream")) {
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+
+          const parts = buf.split("\n\n");
+          buf = parts.pop() ?? "";
+
+          for (const part of parts) {
+            const match = part.match(/^data:\s*(.+)$/m);
+            if (!match) continue;
+            try {
+              const evt = JSON.parse(match[1]);
+              if (evt.type === "pages") {
+                setOcrTotal(evt.count ?? 0);
+                setScanMsg(`📸 Converting ${evt.count} page${evt.count !== 1 ? "s" : ""} to images...`);
+              } else if (evt.type === "page_done") {
+                setOcrProcessed(evt.current ?? 0);
+                setScanMsg(`🔍 Reading page ${evt.current} of ${evt.total}...`);
+              } else if (evt.type === "result") {
+                applyResult(evt);
+              } else if (evt.type === "locked") {
+                setStage("locked");
+              } else if (evt.type === "error") {
+                setErrorMsg(friendlyError(evt.message || "Could not read this file."));
+                setStage("error");
+              }
+            } catch {}
+          }
+        }
         return;
       }
+
+      // ── CSV (or non-SSE fallback) → plain JSON ─────────────────────────────
+      const data = await res.json();
+      if (data.locked) { setStage("locked"); return; }
       if (!res.ok) {
         setErrorMsg(friendlyError(data.error || "Could not read this file."));
         setStage("error");
         return;
       }
-      setImportId(data.import_id);
-      setFilename(data.filename);
-      setDuplicateCount(data.duplicate_count ?? 0);
-      setDetectedBank(data.bank ?? "");
-      setDetectedCurrency(data.detected_currency ?? "");
-      setParseMethod(data.parse_method ?? "");
-      setSkippedCount(data.skipped ?? 0);
-      setTxList(data.transactions.map((tx: ParsedTx) => ({
-        ...tx,
-        selected: !tx.is_duplicate && tx.confidence !== "low",
-      })));
-      setStage("review");
+      applyResult(data);
     } catch {
       setErrorMsg("Connection error. Please try again.");
       setStage("error");
@@ -213,6 +270,7 @@ export default function Import() {
     setFile(null); setStage("idle"); setTxList([]); setImportId(""); setFilename("");
     setErrorMsg(""); setSuccessData(null); setDuplicateCount(0);
     setDetectedBank(""); setDetectedCurrency(""); setParseMethod(""); setSkippedCount(0);
+    setOcrTotal(0); setOcrProcessed(0); setShowSlowMsg(false);
   };
 
   const selectedCount = txList.filter((t) => t.selected).length;
@@ -374,9 +432,34 @@ export default function Import() {
 
         {/* Scanning state */}
         {stage === "scanning" && (
-          <div className="flex flex-col items-center justify-center py-16 gap-4">
+          <div className="flex flex-col items-center justify-center py-16 gap-4 px-4">
             <Spinner />
-            <p className="text-gray-500 text-sm font-medium">{scanMsg}</p>
+            <p className="text-gray-500 text-sm font-medium text-center">{scanMsg}</p>
+
+            {/* OCR page-by-page progress bar — only visible when OCR is active */}
+            {ocrTotal > 0 && (
+              <div className="w-full max-w-xs flex flex-col gap-1.5">
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Page {ocrProcessed} of {ocrTotal}</span>
+                  <span>{Math.round((ocrProcessed / ocrTotal) * 100)}%</span>
+                </div>
+                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.round((ocrProcessed / ocrTotal) * 100)}%`,
+                      background: "linear-gradient(90deg, #00d37f, #00a864)",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {showSlowMsg && (
+              <p className="text-xs text-amber-500 text-center max-w-xs">
+                ⏳ This is taking longer than usual. Complex or scanned PDFs can take up to a minute — hang tight!
+              </p>
+            )}
           </div>
         )}
 

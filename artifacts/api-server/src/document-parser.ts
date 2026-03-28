@@ -17,6 +17,7 @@ export interface ParseResult {
   error?: string;
   locked?: boolean;
   pageCount?: number;
+  warning?: string;
   bank?: string;
   detected_currency?: string;
   parse_method?: "csv" | "pdf-table" | "pdf-lines" | "pdf-ocr";
@@ -539,7 +540,19 @@ export async function parseCSV(buffer: Buffer): Promise<ParseResult> {
 
 // ─── OCR VIA pdftoppm + tesseract.js ──────────────────────────────────────────
 
-async function ocrPDF(buffer: Buffer): Promise<string> {
+export interface OcrProgress {
+  type: "pages" | "page_done";
+  count?: number;   // total pages (for 'pages' event)
+  current?: number; // pages done so far (for 'page_done' event)
+  total?: number;   // total pages (for 'page_done' event)
+}
+
+const OCR_TIMEOUT_MS = 60_000;
+
+async function ocrPDF(
+  buffer: Buffer,
+  onProgress?: (evt: OcrProgress) => void
+): Promise<{ text: string; timedOut: boolean }> {
   const { execSync } = await import("child_process");
   const { mkdtempSync, writeFileSync, readdirSync, rmSync } = await import("fs");
   const { join } = await import("path");
@@ -552,28 +565,49 @@ async function ocrPDF(buffer: Buffer): Promise<string> {
   try {
     writeFileSync(pdfPath, buffer);
 
-    // Convert each page to a 200-DPI PNG (uses system pdftoppm / poppler)
-    execSync(`pdftoppm -r 200 -png "${pdfPath}" "${outPrefix}"`, { timeout: 60_000 });
+    // ── Opt 1: 120 DPI (3× faster than 200)  ── Opt 2: first 8 pages max ──
+    execSync(`pdftoppm -r 120 -f 1 -l 8 -png "${pdfPath}" "${outPrefix}"`, { timeout: 30_000 });
 
     const images = readdirSync(tmpDir)
       .filter((f) => f.endsWith(".png"))
       .sort()
       .map((f) => join(tmpDir, f));
 
-    if (images.length === 0) return "";
+    if (images.length === 0) return { text: "", timedOut: false };
 
+    const total = images.length;
+    console.log(`[OCR] ${total} page(s) at 120 DPI — starting parallel scan`);
+    onProgress?.({ type: "pages", count: total });
+
+    const pageResults: string[] = new Array(total).fill("");
+    const timeoutAt = Date.now() + OCR_TIMEOUT_MS;
+
+    // ── Opt 3: parallel OCR across all pages ──────────────────────────────
     const Tesseract = await import("tesseract.js");
-    let allText = "";
-
-    for (const imgPath of images) {
-      console.log(`[OCR] Processing page: ${imgPath}`);
+    const pagePromises = images.map(async (imgPath, idx) => {
       const worker = await Tesseract.createWorker("eng");
-      const { data: { text } } = await worker.recognize(imgPath);
-      await worker.terminate();
-      allText += text + "\n";
+      try {
+        const { data: { text } } = await worker.recognize(imgPath);
+        pageResults[idx] = text;
+        onProgress?.({ type: "page_done", current: idx + 1, total });
+        console.log(`[OCR] Page ${idx + 1}/${total} done`);
+      } finally {
+        await worker.terminate();
+      }
+    });
+
+    // ── Opt 4: 60-second timeout — return partial results if hit ──────────
+    const raceResult = await Promise.race([
+      Promise.all(pagePromises).then(() => "done" as const),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), OCR_TIMEOUT_MS)),
+    ]);
+
+    const timedOut = raceResult === "timeout";
+    if (timedOut) {
+      console.warn("[OCR] 60-second timeout hit — returning partial results");
     }
 
-    return allText;
+    return { text: pageResults.join("\n"), timedOut };
   } finally {
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
@@ -645,7 +679,36 @@ function parseLinesIntoTransactions(
 
 // ─── PDF PARSER ───────────────────────────────────────────────────────────────
 
-export async function parsePDF(buffer: Buffer): Promise<ParseResult> {
+export async function parsePDF(
+  buffer: Buffer,
+  onProgress?: (evt: OcrProgress) => void
+): Promise<ParseResult> {
+  const runOCR = async (): Promise<ParseResult> => {
+    try {
+      const { text: ocrText, timedOut } = await ocrPDF(buffer, onProgress);
+      const ocrLength = ocrText.trim().length;
+      console.log(`[parsePDF] OCR extracted ${ocrLength} chars, timedOut=${timedOut}`);
+
+      if (ocrLength < 50) return { locked: true, error: "locked_pdf" };
+
+      const bank = detectBank(ocrText);
+      const detected_currency = detectCurrency(ocrText);
+      const { transactions, skipped } = parseLinesIntoTransactions(ocrText, detected_currency);
+
+      if (transactions.length === 0) return { locked: true, error: "locked_pdf" };
+
+      console.log(`[parsePDF] OCR → ${transactions.length} tx (${skipped} skipped, timedOut=${timedOut})`);
+      return {
+        transactions, bank, detected_currency, skipped,
+        parse_method: "pdf-ocr",
+        ...(timedOut ? { warning: "Partial results — statement may be incomplete due to processing time" } : {}),
+      };
+    } catch (ocrErr: any) {
+      console.error("[parsePDF] OCR failed:", ocrErr?.message);
+      return { locked: true, error: "locked_pdf" };
+    }
+  };
+
   try {
     const pdfParse: (buf: Buffer, opts?: any) => Promise<any> = _require("pdf-parse");
     const pdfData = await pdfParse(buffer);
@@ -654,34 +717,12 @@ export async function parsePDF(buffer: Buffer): Promise<ParseResult> {
 
     // ── LOCKED / ENCRYPTED PDF → try OCR fallback ──────────────────────────
     if (textLength < 100) {
-      console.log(`[parsePDF] Locked PDF detected (textLength=${textLength}, pages=${pageCount}). Attempting OCR…`);
-      try {
-        const ocrText = await ocrPDF(buffer);
-        const ocrLength = ocrText.trim().length;
-        console.log(`[parsePDF] OCR extracted ${ocrLength} characters across ${pageCount} page(s)`);
-
-        if (ocrLength < 50) {
-          return { locked: true, pageCount, error: "locked_pdf" };
-        }
-
-        const bank = detectBank(ocrText);
-        const detected_currency = detectCurrency(ocrText);
-        const { transactions, skipped } = parseLinesIntoTransactions(ocrText, detected_currency);
-
-        if (transactions.length === 0) {
-          return { locked: true, pageCount, error: "locked_pdf" };
-        }
-
-        console.log(`[parsePDF] OCR succeeded → ${transactions.length} transactions (${skipped} skipped)`);
-        return { transactions, bank, detected_currency, parse_method: "pdf-ocr", skipped };
-      } catch (ocrErr: any) {
-        console.error("[parsePDF] OCR failed:", ocrErr?.message);
-        return { locked: true, pageCount, error: "locked_pdf" };
-      }
+      console.log(`[parsePDF] Locked PDF (textLength=${textLength}, pages=${pageCount}) → OCR…`);
+      return runOCR();
     }
 
     // ── NORMAL DIGITAL PDF ──────────────────────────────────────────────────
-    console.log(`[parsePDF] Normal PDF (textLength=${textLength}). Using text extraction.`);
+    console.log(`[parsePDF] Normal PDF (textLength=${textLength}) → text extraction`);
     const text = pdfData.text;
     const bank = detectBank(text);
     const detected_currency = detectCurrency(text);
@@ -691,38 +732,27 @@ export async function parsePDF(buffer: Buffer): Promise<ParseResult> {
       return { error: "Could not extract transactions from PDF. Try exporting as CSV from your bank instead." };
     }
 
-    console.log(`[parsePDF] Text extraction → ${transactions.length} transactions (${skipped} skipped)`);
+    console.log(`[parsePDF] Text extraction → ${transactions.length} tx (${skipped} skipped)`);
     return { transactions, bank, detected_currency, parse_method: "pdf-lines", skipped };
   } catch (err: any) {
-    console.error("[parsePDF] Error:", err?.message);
-    // If pdf-parse itself threw (e.g. DOMMatrix, encryption error), try OCR as last resort
-    try {
-      console.log("[parsePDF] pdf-parse threw, attempting OCR fallback...");
-      const ocrText = await ocrPDF(buffer);
-      if (ocrText.trim().length >= 50) {
-        const bank = detectBank(ocrText);
-        const detected_currency = detectCurrency(ocrText);
-        const { transactions, skipped } = parseLinesIntoTransactions(ocrText, detected_currency);
-        if (transactions.length > 0) {
-          console.log(`[parsePDF] OCR fallback succeeded → ${transactions.length} transactions`);
-          return { transactions, bank, detected_currency, parse_method: "pdf-ocr", skipped };
-        }
-      }
-    } catch (ocrErr: any) {
-      console.error("[parsePDF] OCR fallback also failed:", ocrErr?.message);
-    }
-    return { locked: true, error: "locked_pdf" };
+    console.error("[parsePDF] pdf-parse threw:", err?.message, "→ trying OCR fallback");
+    return runOCR();
   }
 }
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
-export async function detectAndParse(buffer: Buffer, filename: string, mimeType: string): Promise<ParseResult> {
+export async function detectAndParse(
+  buffer: Buffer,
+  filename: string,
+  mimeType: string,
+  onProgress?: (evt: OcrProgress) => void
+): Promise<ParseResult> {
   const lc = filename.toLowerCase();
   if (lc.endsWith(".csv") || mimeType.includes("csv") || mimeType.includes("text/plain")) {
     return parseCSV(buffer);
   } else if (lc.endsWith(".pdf") || mimeType.includes("pdf")) {
-    return parsePDF(buffer);
+    return parsePDF(buffer, onProgress);
   }
   return { error: "Only PDF and CSV files are supported. Image scanning coming soon!" };
 }

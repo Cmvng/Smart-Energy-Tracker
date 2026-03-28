@@ -35,7 +35,7 @@ A full-stack mobile-first (max 430px) Income & Expense Tracker with JWT auth, mu
 - `/dashboard` — Timeframe tabs (Today/Week/Month/Year), income/expense/net cards, smart insight banner, grouped transaction list with ⋮ edit/delete menus, FAB "+" button, "View All →" link
 - `/history` — Full transaction history: sticky filters (date range, type, sort), real-time search, paginated list (50 at a time), ⋮ edit/delete per row, bulk select+delete mode
 - `/analytics` — 7d/30d bar chart (recharts), net P&L line chart, smart insight cards, stats row
-- `/import` — Document import: drag-drop upload → scanning → review (toggle income/expense per row, confidence badges, select/deselect all) → confirm → success with P&L summary; import history with delete
+- `/import` — Document import: drag-drop upload → scanning (SSE streaming for PDFs: live page progress bar + "taking longer" message after 30s) → review (toggle income/expense per row, per-row currency dropdown, confidence badges, select/deselect all, locked PDF amber card) → confirm → success with P&L summary; import history with delete
 - `/settings` — User profile, home currency, individual/business mode, notification frequency, CSV export, exchange rate refresh, test reminder, logout
 
 ### Bottom Navigation
