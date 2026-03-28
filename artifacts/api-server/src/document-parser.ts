@@ -576,7 +576,7 @@ async function pdfToImages(
   maxPages = 10,
   onProgress?: (evt: OcrProgress) => void
 ): Promise<Buffer[]> {
-  const { execSync } = await import("child_process");
+  const { execFileSync } = await import("child_process");
   const { mkdtempSync, writeFileSync, readdirSync, readFileSync, rmSync } = await import("fs");
   const { join } = await import("path");
   const { tmpdir } = await import("os");
@@ -587,23 +587,46 @@ async function pdfToImages(
 
   try {
     writeFileSync(pdfPath, buffer);
-    execSync(
-      `pdftoppm -r 150 -f 1 -l ${maxPages} -png "${pdfPath}" "${outPrefix}"`,
-      { timeout: 30_000 }
-    );
+    console.log(`[pdfToImages] PDF written: ${buffer.length} bytes → ${pdfPath}`);
 
-    const files = readdirSync(tmpDir)
-      .filter((f) => f.endsWith(".png"))
+    // Use execFileSync (no shell) — avoids all path-escaping issues with spaces/special chars
+    try {
+      const result = execFileSync(
+        "pdftoppm",
+        ["-r", "150", "-f", "1", "-l", String(maxPages), "-png", pdfPath, outPrefix],
+        { timeout: 60_000, env: process.env }
+      );
+      console.log("[pdfToImages] pdftoppm stdout:", result.toString().trim() || "(none)");
+    } catch (convErr: any) {
+      console.error("[pdfToImages] pdftoppm failed:", convErr?.message);
+      console.error("[pdfToImages] stderr:", convErr?.stderr?.toString?.() ?? "");
+      return [];
+    }
+
+    const allFiles = readdirSync(tmpDir);
+    console.log("[pdfToImages] tmpDir contents:", allFiles);
+
+    const pngFiles = allFiles
+      .filter((f) => f.toLowerCase().endsWith(".png"))
       .sort()
       .map((f) => join(tmpDir, f));
 
-    if (files.length > 0) {
-      onProgress?.({ type: "pages", count: files.length });
+    console.log(`[pdfToImages] PNG files generated: ${pngFiles.length}`);
+
+    if (pngFiles.length === 0) {
+      console.error("[pdfToImages] No PNG files found — pdftoppm may have failed silently");
+      return [];
     }
 
-    return files.map((f) => readFileSync(f));
+    const buffers = pngFiles.map((f) => readFileSync(f));
+    console.log("[pdfToImages] Image sizes (bytes):", buffers.map((b) => b.length));
+
+    onProgress?.({ type: "pages", count: buffers.length });
+
+    return buffers;
   } catch (e: any) {
-    console.error("[pdfToImages] error:", e?.message);
+    console.error("[pdfToImages] fatal error:", e?.message);
+    console.error("[pdfToImages] stack:", e?.stack);
     return [];
   } finally {
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
