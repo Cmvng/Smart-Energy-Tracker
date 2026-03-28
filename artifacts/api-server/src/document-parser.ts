@@ -365,6 +365,29 @@ function parseDate(str: string): string | null {
   return null;
 }
 
+// ─── EXCEL DATE SERIAL NUMBER CONVERTER ──────────────────────────────────────
+// Must live BEFORE parseCSV so it's available when isExcel=true is passed.
+
+function convertExcelDate(value: string): string | null {
+  // First try normal date parsing (handles all string date formats)
+  const normal = parseDate(value);
+  if (normal) return normal;
+
+  // Excel stores dates as serial numbers (days since 1900-01-00, Lotus-compatible)
+  // Valid bank statement range: roughly 2009–2064 = serials 40000–60000
+  const num = parseFloat(value.trim());
+  if (!isNaN(num) && num > 40000 && num < 60000) {
+    const date = new Date((num - 25569) * 86400 * 1000);
+    if (!isNaN(date.getTime())) {
+      const y = date.getUTCFullYear();
+      const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(date.getUTCDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+  }
+  return null;
+}
+
 // ─── TRANSACTION TYPE DETECTION ───────────────────────────────────────────────
 
 function shouldSkip(desc: string): boolean {
@@ -427,7 +450,7 @@ function detectHeader(headers: string[], keywords: string[]): number {
 
 // ─── CSV PARSER ───────────────────────────────────────────────────────────────
 
-export async function parseCSV(buffer: Buffer): Promise<ParseResult> {
+export async function parseCSV(buffer: Buffer, isExcel = false): Promise<ParseResult> {
   try {
     const text = buffer.toString("utf-8");
     const bank = detectBank(text);
@@ -469,7 +492,7 @@ export async function parseCSV(buffer: Buffer): Promise<ParseResult> {
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       const dateRaw = row[dateIdx]?.trim() ?? "";
-      const date = parseDate(dateRaw);
+      const date = isExcel ? convertExcelDate(dateRaw) : parseDate(dateRaw);
       if (!date) { skipped++; continue; }
 
       const rawDesc = descIdx >= 0 ? (row[descIdx] || "").trim().slice(0, 120) : "Transaction";
@@ -851,14 +874,28 @@ export async function parsePDF(
 
 // ─── EXCEL → CSV CONVERTER ────────────────────────────────────────────────────
 
-async function excelToCSV(buffer: Buffer): Promise<string> {
-  const XLSX = await import("xlsx");
-  const workbook = XLSX.read(buffer, { type: "buffer" });
+function excelToCSVText(buffer: Buffer): string {
+  const XLSX = _require("xlsx");
+
+  const workbook = XLSX.read(buffer, {
+    type: "buffer",
+    cellDates: true,   // parse date serial numbers into JS Date objects
+    cellNF: false,
+    cellText: false,
+  });
+
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) throw new Error("Excel file has no sheets");
   const sheet = workbook.Sheets[sheetName];
-  const csv = XLSX.utils.sheet_to_csv(sheet);
-  console.log(`[excelToCSV] Converted sheet "${sheetName}", CSV length: ${csv.length}`);
+
+  const csv: string = XLSX.utils.sheet_to_csv(sheet, {
+    blankrows: false,
+    skipHidden: true,
+    dateNF: "yyyy-mm-dd",  // format Date objects as ISO strings in CSV output
+  });
+
+  console.log(`[excelToCSV] Sheet: "${sheetName}", CSV length: ${csv.length}`);
+  console.log(`[excelToCSV] First 300 chars:`, csv.slice(0, 300));
   return csv;
 }
 
@@ -874,14 +911,14 @@ export async function detectAndParse(
 
   // Excel — convert to CSV first, then parse as CSV
   if (lc.endsWith(".xlsx") || lc.endsWith(".xls") ||
-      mimeType.includes("spreadsheet") || mimeType.includes("vnd.ms-excel")) {
+      mimeType.includes("spreadsheet") || mimeType.includes("vnd.ms-excel") ||
+      mimeType.includes("ms-excel")) {
     try {
-      console.log(`[detectAndParse] Excel file → converting to CSV: ${filename}`);
-      const csvText = await excelToCSV(buffer);
+      console.log(`📊 Processing Excel file: ${filename}`);
+      const csvText = excelToCSVText(buffer);
+      console.log(`[detectAndParse] Excel → CSV done, length: ${csvText.length}`);
       const csvBuffer = Buffer.from(csvText, "utf-8");
-      const result = await parseCSV(csvBuffer);
-      // Mark as excel in parse_method for display
-      if (result.parse_method) result.parse_method = "csv";
+      const result = await parseCSV(csvBuffer, true);
       return result;
     } catch (e: any) {
       console.error("[detectAndParse] Excel conversion failed:", e?.message);
