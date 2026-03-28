@@ -52,6 +52,17 @@ function fmt(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const formatDate = (dateStr: string) => {
+  try {
+    return new Date(dateStr + 'T00:00:00')
+      .toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+  } catch { return dateStr; }
+};
+
 function Spinner() {
   return (
     <div className="w-8 h-8 border-4 border-[#00D37F] border-t-transparent rounded-full animate-spin mx-auto" />
@@ -284,14 +295,14 @@ export default function Import() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen pb-24" style={{ background: "#F5F6FA" }}>
+    <div className="flex flex-col min-h-screen pb-24" style={{ background: "#F5F6FA", width: "100%", maxWidth: "100vw", overflowX: "hidden", boxSizing: "border-box" }}>
       {/* Header */}
       <div className="text-white px-5 pt-12 pb-6" style={{ background: NAVY }}>
         <h1 className="text-2xl font-bold tracking-tight">Import Transactions</h1>
         <p className="text-white/60 text-sm mt-0.5">Upload a CSV or Excel export from your bank</p>
       </div>
 
-      <div className="flex-1 px-4 pt-4">
+      <div className="flex-1" style={{ padding: "12px", boxSizing: "border-box", width: "100%", overflowX: "hidden" }}>
 
         {stage === "error" && (
           <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-4 text-red-700 text-sm">
@@ -473,76 +484,113 @@ export default function Import() {
               </div>
             )}
 
-            <div className="flex gap-2 mb-3">
+            <div style={{ display: "flex", gap: "8px", padding: "0 0 8px" }}>
               <button onClick={() => setTxList((l) => l.map((t) => ({ ...t, selected: true })))}
-                className="text-xs px-3 py-1.5 rounded-lg border font-semibold" style={{ borderColor: GREEN, color: GREEN }}>
+                className="text-xs py-1.5 rounded-lg border font-semibold" style={{ borderColor: GREEN, color: GREEN, flex: 1 }}>
                 Select all
               </button>
               <button onClick={() => setTxList((l) => l.map((t) => ({ ...t, selected: false })))}
-                className="text-xs px-3 py-1.5 rounded-lg border font-semibold text-gray-500 border-gray-300">
+                className="text-xs py-1.5 rounded-lg border font-semibold text-gray-500 border-gray-300" style={{ flex: 1 }}>
                 Deselect all
               </button>
             </div>
 
-            <div className="space-y-2 mb-40">
+            <div style={{ marginBottom: 160 }}>
               {txList.map((tx, i) => (
                 <div
                   key={i}
                   onClick={() => setTxList((l) => l.map((t, j) => j === i ? { ...t, selected: !t.selected } : t))}
-                  className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-start gap-3 cursor-pointer active:opacity-70"
-                  style={{ opacity: tx.selected ? 1 : 0.55 }}
+                  style={{
+                    background: "white",
+                    borderRadius: 10,
+                    padding: 12,
+                    border: "0.5px solid #eee",
+                    marginBottom: 8,
+                    width: "100%",
+                    boxSizing: "border-box",
+                    overflow: "hidden",
+                    opacity: tx.selected ? 1 : 0.55,
+                    cursor: "pointer",
+                  }}
                 >
-                  <input type="checkbox" checked={tx.selected} readOnly
-                    className="mt-0.5 w-5 h-5 rounded accent-[#00D37F] shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="text-xs text-gray-400">{tx.date}</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs font-mono text-gray-400">{currencyFlag(tx.currency)} {tx.currency}</span>
-                        <span className="font-bold text-sm" style={{ color: tx.type === "income" ? GREEN : RED }}>
+                  {/* Main row */}
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, width: "100%" }}>
+                    <input
+                      type="checkbox"
+                      checked={tx.selected}
+                      readOnly
+                      className="accent-[#00D37F]"
+                      style={{ width: 20, height: 20, flexShrink: 0, marginTop: 2 }}
+                    />
+                    {/* Content area */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* Date + Amount row */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <span style={{ fontSize: 12, color: "#888", whiteSpace: "nowrap", flexShrink: 0 }}>
+                          {formatDate(tx.date)}
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0, color: tx.type === "income" ? GREEN : RED }}>
                           {tx.type === "income" ? "+" : "-"}{fmt(tx.amount)}
                         </span>
                       </div>
-                    </div>
-                    <p className="text-sm font-medium text-gray-800 truncate">{tx.description}</p>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTxList((l) => l.map((t, j) => j === i ? { ...t, type: t.type === "income" ? "expense" : "income" } : t));
-                        }}
-                        className="text-xs px-2 py-0.5 rounded-full font-semibold"
-                        style={{
-                          background: tx.type === "income" ? "rgba(0,211,127,0.15)" : "rgba(255,71,87,0.12)",
-                          color: tx.type === "income" ? "#007a4a" : RED,
-                        }}
-                      >
-                        {tx.type === "income" ? "💰 Income" : "💸 Expense"}
-                      </button>
-                      <select
-                        onClick={(e) => e.stopPropagation()}
-                        value={tx.currency}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          const newCur = e.target.value;
-                          setTxList((l) => l.map((t, j) => j === i ? { ...t, currency: newCur } : t));
-                        }}
-                        className="text-xs rounded-full border px-1.5 py-0.5 font-semibold bg-white border-gray-200 text-gray-600"
-                        style={{ maxWidth: 90 }}
-                      >
-                        {COMMON_CURRENCIES.map((c) => (
-                          <option key={c} value={c}>{currencyFlag(c)} {c}</option>
-                        ))}
-                      </select>
-                      {tx.is_duplicate && (
-                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(255,184,0,0.18)", color: "#7a5200" }}>🔄 Possible duplicate</span>
-                      )}
-                      {tx.confidence === "medium" && !tx.is_duplicate && (
-                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(255,184,0,0.15)", color: "#996d00" }}>⚠️ Review</span>
-                      )}
-                      {tx.confidence === "low" && !tx.is_duplicate && (
-                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(255,71,87,0.12)", color: RED }}>❓ Check</span>
-                      )}
+                      {/* Description */}
+                      <p style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%", margin: "3px 0", fontWeight: 500, color: "#1a1a1a" }}>
+                        {tx.description}
+                      </p>
+                      {/* Type badge + currency badge row */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTxList((l) => l.map((t, j) => j === i ? { ...t, type: t.type === "income" ? "expense" : "income" } : t));
+                          }}
+                          style={{
+                            fontSize: 11,
+                            padding: "2px 8px",
+                            borderRadius: 10,
+                            flexShrink: 0,
+                            border: "none",
+                            cursor: "pointer",
+                            fontWeight: 600,
+                            background: tx.type === "income" ? "rgba(0,211,127,0.15)" : "rgba(255,71,87,0.12)",
+                            color: tx.type === "income" ? "#007a4a" : RED,
+                          }}
+                        >
+                          {tx.type === "income" ? "💰 Income" : "💸 Expense"}
+                        </button>
+                        <select
+                          onClick={(e) => e.stopPropagation()}
+                          value={tx.currency}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const newCur = e.target.value;
+                            setTxList((l) => l.map((t, j) => j === i ? { ...t, currency: newCur } : t));
+                          }}
+                          style={{
+                            fontSize: 11,
+                            padding: "2px 6px",
+                            borderRadius: 6,
+                            background: "#f5f5f5",
+                            color: "#666",
+                            flexShrink: 0,
+                            border: "1px solid #e0e0e0",
+                            maxWidth: 90,
+                          }}
+                        >
+                          {COMMON_CURRENCIES.map((c) => (
+                            <option key={c} value={c}>{currencyFlag(c)} {c}</option>
+                          ))}
+                        </select>
+                        {tx.is_duplicate && (
+                          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, flexShrink: 0, background: "rgba(255,184,0,0.18)", color: "#7a5200", fontWeight: 600 }}>🔄 Duplicate</span>
+                        )}
+                        {tx.confidence === "medium" && !tx.is_duplicate && (
+                          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, flexShrink: 0, background: "rgba(255,184,0,0.15)", color: "#996d00", fontWeight: 600 }}>⚠️ Review</span>
+                        )}
+                        {tx.confidence === "low" && !tx.is_duplicate && (
+                          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, flexShrink: 0, background: "rgba(255,71,87,0.12)", color: RED, fontWeight: 600 }}>❓ Check</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -597,18 +645,37 @@ export default function Import() {
 
       {/* Sticky review summary */}
       {stage === "review" && (
-        <div className="fixed bottom-[60px] left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white border-t border-gray-100 px-4 py-3 z-30 shadow-lg">
-          <div className="text-xs text-gray-500 mb-2 flex gap-3">
-            <span><strong>{selectedCount}</strong> selected</span>
+        <div style={{
+          background: "white",
+          borderTop: "1px solid #eee",
+          padding: "12px 16px",
+          paddingBottom: "max(20px, env(safe-area-inset-bottom))",
+          position: "sticky",
+          bottom: 0,
+          width: "100%",
+          boxSizing: "border-box",
+          zIndex: 30,
+          boxShadow: "0 -2px 12px rgba(0,0,0,0.06)",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 12, flexWrap: "wrap", gap: 4 }}>
+            <span className="text-gray-500"><strong>{selectedCount}</strong> selected</span>
             <span style={{ color: GREEN }}>💚 ${fmt(selectedIncome)}</span>
             <span style={{ color: RED }}>❤️ ${fmt(selectedExpense)}</span>
-            <span>Net: <strong style={{ color: selectedIncome - selectedExpense >= 0 ? GREEN : RED }}>${fmt(Math.abs(selectedIncome - selectedExpense))}</strong></span>
+            <span className="text-gray-500">Net: <strong style={{ color: selectedIncome - selectedExpense >= 0 ? GREEN : RED }}>${fmt(Math.abs(selectedIncome - selectedExpense))}</strong></span>
           </div>
           <button
             onClick={handleConfirm}
             disabled={selectedCount === 0}
-            className="w-full h-[48px] rounded-[24px] font-bold text-white transition-all active:scale-95"
-            style={{ background: selectedCount > 0 ? GREEN : "#ccc" }}
+            className="font-bold text-white transition-all active:scale-95"
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              height: 48,
+              borderRadius: 24,
+              border: "none",
+              cursor: selectedCount > 0 ? "pointer" : "default",
+              background: selectedCount > 0 ? GREEN : "#ccc",
+            }}
           >
             Import {selectedCount} Transaction{selectedCount !== 1 ? "s" : ""} →
           </button>
