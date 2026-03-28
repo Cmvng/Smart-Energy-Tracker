@@ -475,7 +475,7 @@ function TxRow({ tx, onEdit, onDelete }: { tx: any; onEdit: (tx: any) => void; o
       >
         {isIncome ? "💰" : "💸"}
       </div>
-      <div className="flex-1 min-w-0" style={{ minWidth: 0, overflow: 'hidden' }}>
+      <div className="flex-1 min-w-0" style={{ minWidth: 0, overflow: 'hidden', flex: 1 }}>
         <p className="font-semibold text-gray-900 truncate text-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.notes || (isIncome ? "Income" : "Expense")}</p>
         <p className="text-xs text-gray-400 mt-0.5">
           {formatDistanceToNow(new Date(tx.transacted_at), { addSuffix: true })}
