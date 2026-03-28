@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { rm, copyFile } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -120,6 +120,13 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  // Copy Python Excel parser to dist/ so it's co-located with index.mjs
+  await copyFile(
+    path.resolve(artifactDir, "src/excel_parser.py"),
+    path.resolve(distDir, "excel_parser.py")
+  );
+  console.log("✅ Copied excel_parser.py to dist/");
 }
 
 buildAll().catch((err) => {

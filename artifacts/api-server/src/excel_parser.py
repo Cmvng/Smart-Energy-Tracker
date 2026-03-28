@@ -1,0 +1,190 @@
+import sys, json, re, openpyxl
+from datetime import datetime
+
+def clean_amount(s):
+    if not s: return None
+    s = re.sub(r'[₦£\$€,\s]', '', str(s).strip())
+    try:
+        v = float(s)
+        return abs(v) if v != 0 else None
+    except: return None
+
+def parse_date(s):
+    if not s: return None
+    s = str(s).strip().split(' ')[0]
+    patterns = [
+        (r'(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})', 'dmy4'),
+        (r'(\d{1,2})[/\-](\d{1,2})[/\-](\d{2})$', 'dmy2'),
+        (r'(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})', 'ymd'),
+        (r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})', 'dMy'),
+    ]
+    months = {'jan':'01','feb':'02','mar':'03','apr':'04','may':'05',
+              'jun':'06','jul':'07','aug':'08','sep':'09','oct':'10',
+              'nov':'11','dec':'12'}
+    for pattern, fmt in patterns:
+        m = re.search(pattern, s, re.IGNORECASE)
+        if m:
+            try:
+                g = m.groups()
+                if fmt == 'ymd': y,mo,d = g[0],g[1].zfill(2),g[2].zfill(2)
+                elif fmt == 'dMy': y,mo,d = g[2],months[g[1].lower()[:3]],g[0].zfill(2)
+                elif fmt == 'dmy2':
+                    n = int(g[2]); y = str(2000+n) if n<50 else str(1900+n)
+                    a,b = int(g[0]),int(g[1])
+                    if a>12: d,mo = str(a).zfill(2),str(b).zfill(2)
+                    else: d,mo = str(b).zfill(2),str(a).zfill(2)
+                else:
+                    a,b,y = int(g[0]),int(g[1]),g[2]
+                    if a>12: d,mo = str(a).zfill(2),str(b).zfill(2)
+                    else: d,mo = str(b).zfill(2),str(a).zfill(2)
+                dt = datetime.strptime(f'{y}-{mo}-{d}','%Y-%m-%d')
+                if 2000<=dt.year<=2030: return dt.strftime('%Y-%m-%d')
+            except: continue
+    return None
+
+INCOME_CATS = ['inward','credit','reversal','refund',
+               'received','money in','salary','deposit',
+               'lodg','inflow','transfer in','nip in']
+EXPENSE_CATS = ['outward','debit','web payment','atm',
+                'pos','charge','fee','stamp','bill',
+                'subscription','payment','purchase',
+                'withdrawal','transfer out','nip out']
+
+def detect_type(cat, desc, has_in, has_out):
+    if has_in and not has_out: return 'income'
+    if has_out and not has_in: return 'expense'
+    text = (str(cat)+' '+str(desc)).lower()
+    for k in INCOME_CATS:
+        if k in text: return 'income'
+    for k in EXPENSE_CATS:
+        if k in text: return 'expense'
+    return 'expense'
+
+def detect_currency(rows):
+    text = ' '.join(str(c) for row in rows[:20]
+                   for c in row if c)
+    scores = {
+        'NGN': len(re.findall(r'₦|NGN|naira', text, re.I)),
+        'GBP': len(re.findall(r'£|GBP|pound', text, re.I)),
+        'USD': len(re.findall(r'\$|USD|dollar', text, re.I)),
+        'EUR': len(re.findall(r'€|EUR|euro', text, re.I)),
+        'KES': len(re.findall(r'KSh|KES|shilling', text, re.I)),
+        'GHS': len(re.findall(r'₵|GHS|cedi', text, re.I)),
+    }
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else 'USD'
+
+def parse_excel(filepath):
+    wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    if not rows:
+        print(json.dumps({'success':False,'error':'Empty file'}))
+        return
+
+    financial_kw = ['date','money in','money out','debit',
+                    'credit','amount','narration','description',
+                    'withdrawal','deposit','particulars',
+                    'transaction','balance','trans date']
+
+    header_idx = 0
+    best_score = 0
+    for i, row in enumerate(rows[:30]):
+        cells = [str(c or '').lower().strip() for c in row if c]
+        score = sum(1 for c in cells
+                   if any(kw in c for kw in financial_kw))
+        if score > best_score:
+            best_score = score
+            header_idx = i
+
+    headers = [str(c or '').lower().strip()
+               for c in rows[header_idx]]
+
+    colDate=colIn=colOut=colDesc=colCat=colBal=colAmt=-1
+    for i, h in enumerate(headers):
+        if ('balance' in h or h=='bal') and colBal==-1:
+            colBal=i; continue
+        if (('money in' in h or 'credit' in h or
+             'deposit' in h or 'paid in' in h or h=='cr' or
+             'inflow' in h or 'lodg' in h or
+             'cr amount' in h) and
+            'debit' not in h and 'descri' not in h
+            and colIn==-1): colIn=i
+        if (('money out' in h or 'debit' in h or
+             'withdrawal' in h or 'paid out' in h or
+             h=='dr' or 'outflow' in h or
+             'dr amount' in h) and
+            'credit' not in h and colOut==-1): colOut=i
+        if ('date' in h or h=='date/time') and colDate==-1:
+            colDate=i
+        if (('descri' in h or 'narrat' in h or
+             'partic' in h or 'detail' in h or
+             'to / from' in h or 'to/from' in h or
+             'remark' in h or 'benefi' in h or
+             'merchant' in h or 'memo' in h) and
+            colDesc==-1): colDesc=i
+        if 'categ' in h and colCat==-1: colCat=i
+        if h in ['amount','transaction amount','value'] \
+           and colAmt==-1: colAmt=i
+
+    currency = detect_currency(rows)
+    transactions = []
+
+    for row in rows[header_idx+1:]:
+        if not any(c for c in row): continue
+        g = lambda idx, row=row: (row[idx] if idx>=0 and
+                        idx<len(row) else None)
+
+        date_raw = str(g(colDate) or '').strip().split(' ')[0]
+        if not date_raw: continue
+        date = parse_date(date_raw)
+        if not date: continue
+
+        in_amt = (clean_amount(g(colIn))
+                  if colIn>=0 else None)
+        out_amt = (clean_amount(g(colOut))
+                   if colOut>=0 else None)
+
+        if colAmt>=0 and not in_amt and not out_amt:
+            av = clean_amount(g(colAmt))
+            if av:
+                orig = str(g(colAmt) or '')
+                if '-' in orig: out_amt = av
+                else: in_amt = av
+
+        if not in_amt and not out_amt: continue
+
+        desc = str(g(colDesc) or g(colCat) or
+                   'Transaction').strip()[:60]
+        cat = str(g(colCat) or '').strip()
+
+        t = detect_type(cat, desc,
+                       bool(in_amt and in_amt>0),
+                       bool(out_amt and out_amt>0))
+        amount = in_amt if t=='income' else out_amt
+        if not amount or amount<=0: continue
+
+        transactions.append({
+            'date': date,
+            'description': desc,
+            'amount': amount,
+            'type': t,
+            'currency': currency,
+            'confidence': 'high'
+        })
+
+    print(json.dumps({
+        'success': True,
+        'method': 'excel-python',
+        'currency': currency,
+        'total_found': len(transactions),
+        'transactions': transactions
+    }))
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print(json.dumps({'error':'No file provided'}))
+        sys.exit(1)
+    parse_excel(sys.argv[1])

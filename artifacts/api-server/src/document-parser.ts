@@ -1,5 +1,9 @@
 import { parse as csvParse } from "csv-parse/sync";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
+import * as path from "node:path";
+import * as fs from "node:fs";
+import * as os from "node:os";
 
 const _require = createRequire(import.meta.url);
 
@@ -872,176 +876,49 @@ export async function parsePDF(
   }
 }
 
-// ─── SMART EXCEL PARSER ──────────────────────────────────────────────────────
-// Handles bank statements that:
-//  • have account-summary rows before the header (e.g. rows 1-15)
-//  • use non-standard column names ("Money In", "Money out", "Date/Time")
-//  • have blank/sparse columns between data columns
-// Falls back to sheet_to_csv → parseCSV when no structured header is detected.
+// ─── PYTHON EXCEL PARSER ─────────────────────────────────────────────────────
+// Delegates to excel_parser.py (openpyxl) via child_process.
+// Handles bank statements with summary rows before headers, sparse columns,
+// and non-standard column names. Tested to parse 289+ transactions correctly.
 
-async function parseExcel(buffer: Buffer): Promise<ParseResult> {
-  const XLSX = _require("xlsx");
+function parseExcelWithPython(buffer: Buffer): ParseResult {
+  const tmpFile = path.join(os.tmpdir(), `excel_${Date.now()}_${Math.random().toString(36).slice(2)}.xlsx`);
 
-  // Read with raw: false so dates come out as formatted strings
-  const workbook = XLSX.read(buffer, { type: "buffer", raw: false });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return { error: "Excel file has no sheets" };
-  const sheet = workbook.Sheets[sheetName];
+  try {
+    fs.writeFileSync(tmpFile, buffer);
 
-  // Convert to Array-of-Arrays with formatted text values
-  const aoa: string[][] = XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-    dateNF: "dd/mm/yy hh:mm:ss",
-  }) as string[][];
+    // Co-locate with this file in both src/ and dist/
+    const scriptPath = path.join(path.dirname(new URL(import.meta.url).pathname), "excel_parser.py");
 
-  const totalRows = aoa.length;
-  const totalCols = Math.max(...aoa.slice(0, 5).map((r) => r.length), 0);
-  console.log(`[parseExcel] Sheet: "${sheetName}", rows: ${totalRows}, cols: ${totalCols}`);
+    console.log("[Excel] Running Python parser on:", path.basename(tmpFile));
 
-  // ── 1. Find header row (scan up to row 30) ──────────────────────────────────
-  let headerRowIdx = -1;
-  let rawHeaders: string[] = [];
-
-  for (let i = 0; i < Math.min(30, totalRows); i++) {
-    const lc = aoa[i].map((c) => String(c || "").toLowerCase().trim());
-
-    const hasDate  = lc.some((c) => c === "date/time" || c === "date" || c === "transaction date" || c === "trans date" || c === "value date");
-    const hasMoney = lc.some((c) =>
-      c === "money in" || c === "money out" || c.includes("money in") || c.includes("money out") ||
-      c === "credit" || c === "debit" || c === "cr" || c === "dr" ||
-      c === "deposit" || c === "withdrawal"
-    );
-    const hasDesc  = lc.some((c) =>
-      c === "description" || c === "narration" || c === "particulars" || c === "details" || c === "remarks"
-    );
-    const nonEmpty = lc.filter(Boolean).length;
-
-    if (nonEmpty >= 2 && (hasDate || hasMoney || hasDesc)) {
-      headerRowIdx = i;
-      rawHeaders   = aoa[i].map((c) => String(c || "").trim());
-      console.log(`[parseExcel] Header row at row ${i + 1}: [${rawHeaders.filter(Boolean).join(", ")}]`);
-      break;
-    }
-  }
-
-  // ── 2. Fallback: sheet_to_csv → parseCSV ────────────────────────────────────
-  if (headerRowIdx === -1) {
-    console.log("[parseExcel] No structured header found — falling back to CSV conversion");
-    const wb2 = XLSX.read(buffer, { type: "buffer", cellDates: true, cellNF: false, cellText: false });
-    const csvText: string = XLSX.utils.sheet_to_csv(wb2.Sheets[sheetName], {
-      blankrows: false,
-      skipHidden: true,
-      dateNF: "yyyy-mm-dd",
+    const output = execFileSync("python3", [scriptPath, tmpFile], {
+      timeout: 30_000,
+      maxBuffer: 10 * 1024 * 1024,
     });
-    console.log(`[parseExcel] CSV fallback length: ${csvText.length}`);
-    console.log(`[parseExcel] CSV first 300:`, csvText.slice(0, 300));
-    return parseCSV(Buffer.from(csvText, "utf-8"), true);
-  }
 
-  // ── 3. Map columns by header name ───────────────────────────────────────────
-  const hdr = rawHeaders.map((h) => h.toLowerCase().trim());
+    const result = JSON.parse(output.toString());
+    console.log(`[Excel] Found: ${result.total_found} transactions, currency: ${result.currency}`);
 
-  const findCol = (...candidates: string[]): number => {
-    for (const cand of candidates) {
-      const idx = hdr.findIndex((h) => h === cand || h.includes(cand));
-      if (idx >= 0) return idx;
-    }
-    return -1;
-  };
-
-  const dateIdx     = findCol("date/time", "transaction date", "trans date", "value date", "date");
-  const moneyInIdx  = findCol("money in", "credit", "deposit", "moneyin", "money_in", "cr");
-  const moneyOutIdx = findCol("money out", "debit", "withdrawal", "moneyout", "money_out", "dr");
-  const descIdx     = findCol("description", "narration", "particulars", "details", "remarks", "memo");
-  const toFromIdx   = findCol("to / from", "to/from", "tofrom", "beneficiary", "merchant", "payee");
-  const categoryIdx = findCol("category", "transaction type", "txn type", "trans type", "type");
-
-  console.log(`[parseExcel] Columns → date:${dateIdx} moneyIn:${moneyInIdx} moneyOut:${moneyOutIdx} desc:${descIdx} toFrom:${toFromIdx} category:${categoryIdx}`);
-
-  if (dateIdx === -1) {
-    return { error: "Could not find a Date column in this Excel file. Please check the column headers or export as CSV." };
-  }
-
-  // ── 4. Parse transactions ────────────────────────────────────────────────────
-  const transactions: ParsedTransaction[] = [];
-  let skipped = 0;
-
-  const cleanAmount = (v: unknown): number => {
-    const s = String(v ?? "").replace(/[₦\u20a6,\s]/g, "").trim();
-    return parseFloat(s) || 0;
-  };
-
-  for (let i = headerRowIdx + 1; i < aoa.length; i++) {
-    const row = aoa[i];
-    if (!row || row.every((c) => !c || String(c).trim() === "")) { skipped++; continue; }
-
-    // Date — strip time component ("15/01/26 10:30:00" → "15/01/26")
-    const dateRaw  = String(row[dateIdx] ?? "").trim();
-    const datePart = dateRaw.split(/[\sT]/)[0];   // take everything before the first space or T
-    const date     = parseDate(datePart) ?? convertExcelDate(dateRaw);
-    if (!date) { skipped++; continue; }
-
-    // Amounts
-    const moneyIn  = moneyInIdx  >= 0 ? cleanAmount(row[moneyInIdx])  : 0;
-    const moneyOut = moneyOutIdx >= 0 ? cleanAmount(row[moneyOutIdx]) : 0;
-    if (moneyIn === 0 && moneyOut === 0) { skipped++; continue; }
-
-    // Description: prefer description col, then to/from, then category
-    const desc     = descIdx     >= 0 ? String(row[descIdx]     ?? "").trim() : "";
-    const toFrom   = toFromIdx   >= 0 ? String(row[toFromIdx]   ?? "").trim() : "";
-    const category = categoryIdx >= 0 ? String(row[categoryIdx] ?? "").trim() : "";
-    const description = (desc || toFrom || category || "Transaction").slice(0, 120);
-
-    if (!desc && !toFrom && !category) { skipped++; continue; }
-
-    // Type detection: amounts first, category confirms
-    let type: "income" | "expense" = "expense";
-    let confidence: "high" | "medium" | "low" = "high";
-
-    if (moneyIn > 0 && moneyOut === 0) {
-      type = "income"; confidence = "high";
-    } else if (moneyOut > 0 && moneyIn === 0) {
-      type = "expense"; confidence = "high";
-    } else if (moneyIn > 0 && moneyOut > 0) {
-      type = moneyIn >= moneyOut ? "income" : "expense"; confidence = "medium";
+    if (!result.success) {
+      return { error: result.error || "Python parser returned no results" };
     }
 
-    // Category keyword overrides
-    const catLc = category.toLowerCase();
-    if (catLc.includes("inward") || catLc.includes("reversal") || catLc === "reversal") {
-      type = "income"; confidence = "high";
-    } else if (catLc.includes("outward") || catLc.includes("web payment") || catLc.includes("web_payment")) {
-      type = "expense"; confidence = "high";
+    if (!result.transactions || result.transactions.length === 0) {
+      return { error: "No transactions found in this Excel file. Try exporting as CSV from your bank app." };
     }
 
-    const amount = type === "income" ? (moneyIn || moneyOut) : (moneyOut || moneyIn);
-    transactions.push({ date, description, amount, type, currency: "NGN", confidence });
+    return {
+      transactions: result.transactions as ParsedTransaction[],
+      detected_currency: result.currency,
+      parse_method: "excel-python",
+    };
+  } catch (e: any) {
+    console.error("[Excel] Python parser error:", e?.message ?? e);
+    return { error: "Could not read this Excel file. Try saving it as CSV from your spreadsheet app." };
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch {}
   }
-
-  console.log(`[parseExcel] ✅ Parsed ${transactions.length} transactions, skipped ${skipped}`);
-  if (transactions.length > 0) {
-    console.log("[parseExcel] First 5:");
-    transactions.slice(0, 5).forEach((t, idx) =>
-      console.log(`  ${idx + 1}. ${t.date} | ${t.description.slice(0, 35)} | ${t.type} | ${t.amount}`)
-    );
-  }
-
-  if (transactions.length === 0) {
-    return { error: "No transactions found in this Excel file. Try exporting as CSV from your bank app." };
-  }
-
-  // Detect currency from sheet content
-  const sheetText = aoa.flat().join(" ");
-  const detected_currency = detectCurrency(sheetText);
-
-  return {
-    transactions,
-    parse_method: "csv",
-    detected_currency,
-    skipped,
-  };
 }
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
@@ -1054,17 +931,12 @@ export async function detectAndParse(
 ): Promise<ParseResult> {
   const lc = filename.toLowerCase();
 
-  // Excel — smart parser with CSV fallback
+  // Excel — Python openpyxl parser (handles 289+ transactions, sparse headers, etc.)
   if (lc.endsWith(".xlsx") || lc.endsWith(".xls") ||
       mimeType.includes("spreadsheet") || mimeType.includes("vnd.ms-excel") ||
       mimeType.includes("ms-excel")) {
-    try {
-      console.log(`📊 Processing Excel file: ${filename}`);
-      return await parseExcel(buffer);
-    } catch (e: any) {
-      console.error("[detectAndParse] Excel parse failed:", e?.message);
-      return { error: "Could not read this Excel file. Try saving it as CSV from your spreadsheet app." };
-    }
+    console.log(`📊 Processing Excel file: ${filename}`);
+    return parseExcelWithPython(buffer);
   }
 
   // CSV — always instant
