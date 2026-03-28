@@ -681,20 +681,32 @@ async function readWithAI(
   onProgress?.({ type: "page_done", current: total, total });
 
   const raw = response.choices[0]?.message?.content ?? "";
+  console.log("[AI Vision] raw response (first 3000 chars):", raw.slice(0, 3000));
+  console.log("[AI Vision] raw response length:", raw.length);
+
   const cleaned = raw.replace(/```json/g, "").replace(/```/g, "").trim();
 
   let aiRows: any[] = [];
   try {
     aiRows = JSON.parse(cleaned);
-  } catch {
+    console.log("[AI Vision] JSON.parse succeeded, rows:", aiRows.length);
+  } catch (parseErr: any) {
+    console.warn("[AI Vision] JSON.parse failed:", parseErr?.message);
     const match = raw.match(/\[[\s\S]*\]/);
     if (match) {
-      try { aiRows = JSON.parse(match[0]); } catch {}
+      try {
+        aiRows = JSON.parse(match[0]);
+        console.log("[AI Vision] regex fallback parse succeeded, rows:", aiRows.length);
+      } catch (e2: any) {
+        console.warn("[AI Vision] regex fallback also failed:", e2?.message);
+      }
+    } else {
+      console.warn("[AI Vision] no JSON array found in response at all");
     }
   }
 
   if (!Array.isArray(aiRows) || aiRows.length === 0) {
-    console.warn("[AI Vision] No transactions parsed from AI response");
+    console.warn("[AI Vision] No transactions parsed — raw was:", raw.slice(0, 500));
     return { locked: true };
   }
 
