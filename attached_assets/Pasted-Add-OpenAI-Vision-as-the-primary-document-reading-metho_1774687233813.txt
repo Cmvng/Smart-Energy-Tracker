@@ -1,0 +1,234 @@
+Add OpenAI Vision as the primary document 
+reading method for ALL uploads.
+This replaces Tesseract as the main OCR.
+
+npm install openai pdf-poppler
+
+COMPLETE REWRITE of the PDF processing pipeline:
+
+PRIORITY ORDER for processing any uploaded file:
+
+1. CSV files → use universal CSV parser (instant)
+2. PDF files → try this sequence:
+   a. Try pdf-parse text extraction (instant, free)
+      If 5+ transactions found → done
+   b. If text extraction fails OR less than 5 found:
+      Convert PDF pages to images with pdftoppm
+      Send images to OpenAI Vision API
+      Parse the AI response into transactions
+3. Image files (JPG/PNG) → send directly to 
+   OpenAI Vision API
+
+OPENAI VISION IMPLEMENTATION:
+
+Install: npm install openai
+
+Create function: async function readWithAI(
+  imageBuffers: Buffer[], 
+  filename: string
+)
+
+const openai = new OpenAI({ 
+  apiKey: process.env.OPENAI_API_KEY 
+})
+
+Convert each page buffer to base64.
+Send ALL pages in a single API call:
+
+const messages = [
+  {
+    role: 'user',
+    content: [
+      {
+        type: 'text',
+        text: `You are a financial data extraction expert.
+Extract ALL transactions from this bank statement.
+Return ONLY a valid JSON array, no other text, 
+no markdown, no explanation.
+
+Each transaction must have exactly these fields:
+{
+  "date": "YYYY-MM-DD",
+  "description": "exact transaction description",
+  "amount": 1234.56,
+  "type": "income or expense",
+  "currency": "3-letter code e.g. NGN USD GBP"
+}
+
+Rules:
+- amount is always a positive number
+- type is "income" for credits/deposits/transfers in
+- type is "expense" for debits/withdrawals/purchases
+- Skip balance rows, opening/closing balance lines
+- Skip table headers
+- date must be in YYYY-MM-DD format
+- If currency not shown, use the most common 
+  currency in the document
+- Include EVERY transaction row you can find
+- Return [] if no transactions found`
+      },
+      // Add each page as an image
+      ...imageBuffers.map(buf => ({
+        type: 'image_url',
+        image_url: {
+          url: `data:image/png;base64,${buf.toString('base64')}`,
+          detail: 'high'
+        }
+      }))
+    ]
+  }
+]
+
+const response = await openai.chat.completions.create({
+  model: 'gpt-4o',
+  messages,
+  max_tokens: 4000,
+  temperature: 0
+})
+
+Parse the response:
+const text = response.choices[0].message.content
+const cleaned = text
+  .replace(/```json/g, '')
+  .replace(/```/g, '')
+  .trim()
+
+try {
+  const transactions = JSON.parse(cleaned)
+  return {
+    success: true,
+    transactions,
+    method: 'ai-vision',
+    totalFound: transactions.length
+  }
+} catch(e) {
+  // Try to extract JSON array from response
+  const match = text.match(/\[[\s\S]*\]/)
+  if (match) {
+    const transactions = JSON.parse(match[0])
+    return { success: true, transactions, 
+             method: 'ai-vision',
+             totalFound: transactions.length }
+  }
+  return { success: false, transactions: [] }
+}
+
+CONVERT PDF TO IMAGES function:
+async function pdfToImages(buffer: Buffer): 
+  Promise<Buffer[]>
+
+Use pdftoppm:
+- Resolution: 150 DPI (good quality, reasonable size)
+- Format: PNG
+- Max pages: 10 (covers most statements)
+- Output to temp directory
+- Read resulting PNG files into buffers
+- Clean up temp directory after
+
+Return array of image buffers, one per page.
+
+MAIN PROCESSING FUNCTION:
+async function detectAndParse(
+  buffer: Buffer, 
+  filename: string, 
+  mimeType: string
+) {
+  // CSV - always fast and free
+  if (filename.endsWith('.csv') || 
+      mimeType.includes('csv')) {
+    return universalCSVParser(buffer)
+  }
+  
+  // Image uploaded directly
+  if (mimeType.includes('image')) {
+    if (!process.env.OPENAI_API_KEY) {
+      return { 
+        error: true, 
+        message: 'AI scanning not configured' 
+      }
+    }
+    return readWithAI([buffer], filename)
+  }
+  
+  // PDF processing
+  if (filename.endsWith('.pdf') || 
+      mimeType.includes('pdf')) {
+    
+    // Step 1: Try free text extraction first
+    try {
+      const textResult = await parsePDF(buffer)
+      if (textResult.transactions?.length >= 5) {
+        console.log('✅ PDF parsed with text extraction')
+        return textResult
+      }
+    } catch(e) {
+      console.log('Text extraction failed:', e.message)
+    }
+    
+    // Step 2: Convert to images and use AI Vision
+    if (!process.env.OPENAI_API_KEY) {
+      // No AI key - show helpful message
+      return {
+        locked: true,
+        transactions: [],
+        totalFound: 0,
+        message: 'This PDF needs AI scanning. CSV format works instantly.'
+      }
+    }
+    
+    console.log('🔍 Using AI Vision for PDF...')
+    const images = await pdfToImages(buffer)
+    
+    if (images.length === 0) {
+      return {
+        locked: true,
+        transactions: [],
+        totalFound: 0
+      }
+    }
+    
+    return await readWithAI(images, filename)
+  }
+  
+  return { error: true, message: 'Unsupported file type' }
+}
+
+FRONTEND LOADING MESSAGES UPDATE:
+When processing PDF show these cycling messages:
+"📄 Reading your document..."
+"🔍 Analysing transactions..."  
+"✨ Almost done..."
+
+Remove all mentions of "Converting pages" or 
+"Tesseract" from user-facing text.
+Keep it simple and friendly.
+
+Also update the file picker to accept images:
+accept=".pdf,.csv,.jpg,.jpeg,.png,.webp"
+
+So users can now upload:
+- PDF bank statements (AI reads them)
+- CSV exports (instant)
+- Photos of receipts (AI reads them)
+- Screenshots of statements (AI reads them)
+
+UPDATE THE AMBER CARD:
+If OPENAI_API_KEY IS set but AI still failed:
+Show: "We couldn't read this document.
+Try uploading a clearer version or 
+download as CSV from your bank app."
+
+If OPENAI_API_KEY IS NOT set:
+Show the current amber card with CSV instructions.
+
+AFTER BUILDING:
+1. cd client && npm run build
+2. Restart server  
+3. Log on startup:
+   if OPENAI_API_KEY exists: 
+     "✅ AI Vision enabled — all PDF types supported"
+   else:
+     "⚠️ No OpenAI key — locked PDFs will show help card"
+4. Test with the e-signed bank statement PDF
+5. Confirm transactions are extracted and shown
+6. Show me the first 3 transactions found

@@ -8,15 +8,18 @@ import { detectAndParse, OcrProgress } from "../document-parser";
 
 const router = Router();
 
+const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const ok = file.originalname.toLowerCase().endsWith(".pdf") ||
-      file.originalname.toLowerCase().endsWith(".csv") ||
-      file.mimetype.includes("pdf") ||
-      file.mimetype.includes("csv") ||
-      file.mimetype === "text/plain";
+    const lc = file.originalname.toLowerCase();
+    const ext = lc.slice(lc.lastIndexOf("."));
+    const ok = lc.endsWith(".pdf") || lc.endsWith(".csv") ||
+      IMAGE_EXTS.has(ext) ||
+      file.mimetype.includes("pdf") || file.mimetype.includes("csv") ||
+      file.mimetype === "text/plain" || file.mimetype.startsWith("image/");
     if (ok) cb(null, true);
     else cb(new Error("WRONG_TYPE"));
   },
@@ -83,8 +86,13 @@ router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
     }
 
     const filename = req.file.originalname;
-    const fileType = filename.toLowerCase().endsWith(".pdf") ? "pdf" : "csv";
-    const isPDF = fileType === "pdf";
+    const lc2 = filename.toLowerCase();
+    const ext2 = lc2.slice(lc2.lastIndexOf("."));
+    const fileType = lc2.endsWith(".pdf") ? "pdf"
+      : IMAGE_EXTS.has(ext2) ? "image"
+      : "csv";
+    // PDFs and images both go through AI, so stream SSE for both
+    const useSSE = fileType === "pdf" || fileType === "image";
 
     let importRecord: any;
     try {
@@ -100,8 +108,8 @@ router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // ── PDF → stream SSE events so frontend can show live page progress ──────
-    if (isPDF) {
+    // ── PDF/Image → stream SSE events so frontend can show live progress ─────
+    if (useSSE) {
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("X-Accel-Buffering", "no");

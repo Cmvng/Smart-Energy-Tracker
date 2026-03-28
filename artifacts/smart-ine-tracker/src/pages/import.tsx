@@ -30,6 +30,8 @@ const PARSE_METHOD_LABEL: Record<string, string> = {
   "csv": "CSV",
   "pdf-table": "PDF table",
   "pdf-lines": "PDF text",
+  "pdf-ocr": "PDF scan",
+  "ai-vision": "AI Vision",
 };
 
 interface ParsedTx {
@@ -84,13 +86,9 @@ export default function Import() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const scanMessages = [
-    "Reading your document...",
-    "Finding transactions...",
-    "🔒 Secured PDF detected...",
-    "📸 Converting pages to images...",
-    "🔍 Reading with advanced scanner...",
-    "✨ Extracting transactions...",
-    "Almost done...",
+    "📄 Reading your document...",
+    "🔍 Analysing transactions...",
+    "✨ Almost done...",
   ];
   const scanMsgRef = useRef(0);
 
@@ -120,10 +118,12 @@ export default function Import() {
     return () => clearTimeout(t);
   }, [stage]);
 
+  const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".webp"];
   const handleFile = (f: File) => {
     const lc = f.name.toLowerCase();
-    if (!lc.endsWith(".pdf") && !lc.endsWith(".csv")) {
-      setErrorMsg("Only PDF and CSV files are supported right now.");
+    const allowed = lc.endsWith(".pdf") || lc.endsWith(".csv") || IMAGE_EXTS.some((e) => lc.endsWith(e));
+    if (!allowed) {
+      setErrorMsg("Supported formats: PDF, CSV, JPG, PNG, WebP.");
       setStage("error");
       return;
     }
@@ -161,7 +161,8 @@ export default function Import() {
     setOcrProcessed(0);
     setShowSlowMsg(false);
 
-    const isPDF = file.name.toLowerCase().endsWith(".pdf");
+    const lc = file.name.toLowerCase();
+    const isAIBased = lc.endsWith(".pdf") || IMAGE_EXTS.some((e) => lc.endsWith(e));
     const formData = new FormData();
     formData.append("document", file);
 
@@ -172,8 +173,8 @@ export default function Import() {
         body: formData,
       });
 
-      // ── PDF → read SSE stream ──────────────────────────────────────────────
-      if (isPDF && res.headers.get("content-type")?.includes("text/event-stream")) {
+      // ── PDF / Image → read SSE stream ─────────────────────────────────────
+      if (isAIBased && res.headers.get("content-type")?.includes("text/event-stream")) {
         const reader = res.body!.getReader();
         const decoder = new TextDecoder();
         let buf = "";
@@ -343,14 +344,13 @@ export default function Import() {
         {/* Locked PDF card */}
         {stage === "locked" && (
           <div className="rounded-2xl p-5 mb-4" style={{ background: "rgba(255,184,0,0.10)", border: "1.5px solid rgba(255,184,0,0.45)" }}>
-            <p className="text-lg font-bold mb-2" style={{ color: "#7a4f00" }}>🔒 This PDF appears to be a secured or e-signed document.</p>
+            <p className="text-lg font-bold mb-2" style={{ color: "#7a4f00" }}>🔒 We couldn't read this document.</p>
             <p className="text-sm mb-3" style={{ color: "#7a4f00" }}>
-              Your bank has locked it to prevent copying — this is normal for official statements.
+              Try uploading a clearer version, or download as CSV from your bank app.
             </p>
-            <p className="text-sm font-bold mb-1" style={{ color: "#7a4f00" }}>To import your transactions, try one of these:</p>
 
             <div className="rounded-xl p-3 mb-2 text-sm" style={{ background: "rgba(255,255,255,0.6)", color: "#5a3800" }}>
-              <p className="font-bold mb-1">Option 1 (Easiest) — Download as CSV from your bank app</p>
+              <p className="font-bold mb-1">Download as CSV from your bank app</p>
               <ul className="text-xs space-y-0.5 list-none pl-0">
                 <li>🏦 <strong>GTBank:</strong> App → Accounts → Statement → CSV</li>
                 <li>🏦 <strong>Access:</strong> App → More → Statement → Export CSV</li>
@@ -358,11 +358,6 @@ export default function Import() {
                 <li>🏦 <strong>Zenith:</strong> App → Account Statement → CSV</li>
                 <li>🏦 <strong>Others:</strong> Look for <em>Export</em> or <em>Download</em> in your statement section</li>
               </ul>
-            </div>
-
-            <div className="rounded-xl p-3 mb-3 text-sm" style={{ background: "rgba(255,255,255,0.6)", color: "#5a3800" }}>
-              <p className="font-bold mb-0.5">Option 2 — Request an unlocked statement from your bank</p>
-              <p className="text-xs">Ask for a <em>"digital statement"</em> — not a <em>"certified copy"</em></p>
             </div>
 
             <button onClick={reset} className="w-full py-2 rounded-xl text-sm font-bold" style={{ background: AMBER, color: "#fff" }}>
@@ -395,12 +390,12 @@ export default function Import() {
                 <>
                   <div className="text-5xl">📂</div>
                   <p className="font-bold text-base" style={{ color: NAVY }}>Tap to upload your bank statement</p>
-                  <p className="text-sm text-gray-400">PDF or CSV — up to 10MB</p>
+                  <p className="text-sm text-gray-400">PDF, CSV, or photo — up to 20MB</p>
                 </>
               )}
             </div>
 
-            <input ref={fileInputRef} type="file" accept=".pdf,.csv" className="hidden"
+            <input ref={fileInputRef} type="file" accept=".pdf,.csv,.jpg,.jpeg,.png,.webp" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
 
             {file && (
@@ -418,7 +413,7 @@ export default function Import() {
               {[
                 { icon: "📄", title: "Bank Statement PDF", desc: "Exported from your bank's app" },
                 { icon: "📊", title: "CSV Export", desc: "Downloaded transaction history" },
-                { icon: "🔜", title: "Receipt Images", desc: "Coming soon — premium" },
+                { icon: "🖼️", title: "Photos & Scans", desc: "Receipts, screenshots, images" },
               ].map(({ icon, title, desc }) => (
                 <div key={title} className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm">
                   <div className="text-2xl mb-1">{icon}</div>
@@ -457,7 +452,7 @@ export default function Import() {
 
             {showSlowMsg && (
               <p className="text-xs text-amber-500 text-center max-w-xs">
-                ⏳ This is taking longer than usual. Complex or scanned PDFs can take up to a minute — hang tight!
+                ⏳ This is taking longer than usual. Complex documents can take up to a minute — hang tight!
               </p>
             )}
           </div>
@@ -602,7 +597,7 @@ export default function Import() {
                 <div className="space-y-2">
                   {history.map((imp) => (
                     <div key={imp.id} className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-center gap-3">
-                      <span className="text-xl">{imp.file_type === "pdf" ? "📄" : "📊"}</span>
+                      <span className="text-xl">{imp.file_type === "pdf" ? "📄" : imp.file_type === "image" ? "🖼️" : "📊"}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-gray-800 truncate">{imp.filename}</p>
                         <p className="text-xs text-gray-400">{new Date(imp.created_at).toLocaleDateString()}</p>

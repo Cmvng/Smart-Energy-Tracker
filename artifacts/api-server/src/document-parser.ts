@@ -20,7 +20,7 @@ export interface ParseResult {
   warning?: string;
   bank?: string;
   detected_currency?: string;
-  parse_method?: "csv" | "pdf-table" | "pdf-lines" | "pdf-ocr";
+  parse_method?: "csv" | "pdf-table" | "pdf-lines" | "pdf-ocr" | "ai-vision";
   skipped?: number;
 }
 
@@ -538,79 +538,149 @@ export async function parseCSV(buffer: Buffer): Promise<ParseResult> {
   }
 }
 
-// ─── OCR VIA pdftoppm + tesseract.js ──────────────────────────────────────────
+// ─── AI VISION PIPELINE (OpenAI gpt-4o) ──────────────────────────────────────
 
 export interface OcrProgress {
   type: "pages" | "page_done";
-  count?: number;   // total pages (for 'pages' event)
-  current?: number; // pages done so far (for 'page_done' event)
-  total?: number;   // total pages (for 'page_done' event)
+  count?: number;
+  current?: number;
+  total?: number;
 }
 
-const OCR_TIMEOUT_MS = 60_000;
+const AI_VISION_PROMPT = `You are a financial data extraction expert.
+Extract ALL transactions from this bank statement or receipt image.
+Return ONLY a valid JSON array, no other text, no markdown, no explanation.
 
-async function ocrPDF(
+Each transaction must have exactly these fields:
+{
+  "date": "YYYY-MM-DD",
+  "description": "exact transaction description",
+  "amount": 1234.56,
+  "type": "income or expense",
+  "currency": "3-letter code e.g. NGN USD GBP"
+}
+
+Rules:
+- amount is always a positive number
+- type is "income" for credits/deposits/transfers in
+- type is "expense" for debits/withdrawals/purchases
+- Skip balance rows, opening/closing balance lines
+- Skip table headers
+- date must be in YYYY-MM-DD format
+- If currency not shown, use the most common currency in the document
+- Include EVERY transaction row you can find
+- Return [] if no transactions found`;
+
+async function pdfToImages(
   buffer: Buffer,
+  maxPages = 10,
   onProgress?: (evt: OcrProgress) => void
-): Promise<{ text: string; timedOut: boolean }> {
+): Promise<Buffer[]> {
   const { execSync } = await import("child_process");
-  const { mkdtempSync, writeFileSync, readdirSync, rmSync } = await import("fs");
+  const { mkdtempSync, writeFileSync, readdirSync, readFileSync, rmSync } = await import("fs");
   const { join } = await import("path");
   const { tmpdir } = await import("os");
 
-  const tmpDir = mkdtempSync(join(tmpdir(), "ine-ocr-"));
+  const tmpDir = mkdtempSync(join(tmpdir(), "ine-ai-"));
   const pdfPath = join(tmpDir, "input.pdf");
   const outPrefix = join(tmpDir, "page");
 
   try {
     writeFileSync(pdfPath, buffer);
+    execSync(
+      `pdftoppm -r 150 -f 1 -l ${maxPages} -png "${pdfPath}" "${outPrefix}"`,
+      { timeout: 30_000 }
+    );
 
-    // ── Opt 1: 120 DPI (3× faster than 200)  ── Opt 2: first 8 pages max ──
-    execSync(`pdftoppm -r 120 -f 1 -l 8 -png "${pdfPath}" "${outPrefix}"`, { timeout: 30_000 });
-
-    const images = readdirSync(tmpDir)
+    const files = readdirSync(tmpDir)
       .filter((f) => f.endsWith(".png"))
       .sort()
       .map((f) => join(tmpDir, f));
 
-    if (images.length === 0) return { text: "", timedOut: false };
-
-    const total = images.length;
-    console.log(`[OCR] ${total} page(s) at 120 DPI — starting parallel scan`);
-    onProgress?.({ type: "pages", count: total });
-
-    const pageResults: string[] = new Array(total).fill("");
-    const timeoutAt = Date.now() + OCR_TIMEOUT_MS;
-
-    // ── Opt 3: parallel OCR across all pages ──────────────────────────────
-    const Tesseract = await import("tesseract.js");
-    const pagePromises = images.map(async (imgPath, idx) => {
-      const worker = await Tesseract.createWorker("eng");
-      try {
-        const { data: { text } } = await worker.recognize(imgPath);
-        pageResults[idx] = text;
-        onProgress?.({ type: "page_done", current: idx + 1, total });
-        console.log(`[OCR] Page ${idx + 1}/${total} done`);
-      } finally {
-        await worker.terminate();
-      }
-    });
-
-    // ── Opt 4: 60-second timeout — return partial results if hit ──────────
-    const raceResult = await Promise.race([
-      Promise.all(pagePromises).then(() => "done" as const),
-      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), OCR_TIMEOUT_MS)),
-    ]);
-
-    const timedOut = raceResult === "timeout";
-    if (timedOut) {
-      console.warn("[OCR] 60-second timeout hit — returning partial results");
+    if (files.length > 0) {
+      onProgress?.({ type: "pages", count: files.length });
     }
 
-    return { text: pageResults.join("\n"), timedOut };
+    return files.map((f) => readFileSync(f));
+  } catch (e: any) {
+    console.error("[pdfToImages] error:", e?.message);
+    return [];
   } finally {
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
+}
+
+async function readWithAI(
+  imageBuffers: Buffer[],
+  filename: string,
+  onProgress?: (evt: OcrProgress) => void
+): Promise<ParseResult> {
+  const { default: OpenAI } = await import("openai");
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const content: any[] = [
+    { type: "text", text: AI_VISION_PROMPT },
+    ...imageBuffers.map((buf) => ({
+      type: "image_url",
+      image_url: {
+        url: `data:image/png;base64,${buf.toString("base64")}`,
+        detail: "high",
+      },
+    })),
+  ];
+
+  console.log(`[AI Vision] Sending ${imageBuffers.length} image(s) to gpt-4o for ${filename}`);
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "user", content }],
+    max_tokens: 4000,
+    temperature: 0,
+  });
+
+  const total = imageBuffers.length;
+  onProgress?.({ type: "page_done", current: total, total });
+
+  const raw = response.choices[0]?.message?.content ?? "";
+  const cleaned = raw.replace(/```json/g, "").replace(/```/g, "").trim();
+
+  let aiRows: any[] = [];
+  try {
+    aiRows = JSON.parse(cleaned);
+  } catch {
+    const match = raw.match(/\[[\s\S]*\]/);
+    if (match) {
+      try { aiRows = JSON.parse(match[0]); } catch {}
+    }
+  }
+
+  if (!Array.isArray(aiRows) || aiRows.length === 0) {
+    console.warn("[AI Vision] No transactions parsed from AI response");
+    return { locked: true };
+  }
+
+  const transactions: ParsedTransaction[] = aiRows
+    .filter((r) => r.date && r.amount && r.type)
+    .map((r) => ({
+      date: parseDate(r.date) ?? r.date,
+      description: String(r.description || "Transaction").slice(0, 120),
+      amount: Math.abs(Number(r.amount)) || 0,
+      type: String(r.type).toLowerCase().includes("income") ? "income" : "expense",
+      currency: String(r.currency || "USD").toUpperCase().slice(0, 3),
+      confidence: "high" as const,
+    }))
+    .filter((t) => t.amount > 0);
+
+  if (transactions.length === 0) {
+    return { locked: true };
+  }
+
+  const allText = aiRows.map((r) => `${r.description ?? ""} ${r.currency ?? ""}`).join(" ");
+  const bank = detectBank(allText + " " + filename);
+  const detected_currency = transactions[0]?.currency ?? detectCurrency(allText);
+
+  console.log(`[AI Vision] ✅ Extracted ${transactions.length} transactions`);
+  return { transactions, bank, detected_currency, parse_method: "ai-vision", skipped: 0 };
 }
 
 // ─── SHARED TEXT → TRANSACTIONS PARSER ────────────────────────────────────────
@@ -683,60 +753,43 @@ export async function parsePDF(
   buffer: Buffer,
   onProgress?: (evt: OcrProgress) => void
 ): Promise<ParseResult> {
-  const runOCR = async (): Promise<ParseResult> => {
-    try {
-      const { text: ocrText, timedOut } = await ocrPDF(buffer, onProgress);
-      const ocrLength = ocrText.trim().length;
-      console.log(`[parsePDF] OCR extracted ${ocrLength} chars, timedOut=${timedOut}`);
-
-      if (ocrLength < 50) return { locked: true, error: "locked_pdf" };
-
-      const bank = detectBank(ocrText);
-      const detected_currency = detectCurrency(ocrText);
-      const { transactions, skipped } = parseLinesIntoTransactions(ocrText, detected_currency);
-
-      if (transactions.length === 0) return { locked: true, error: "locked_pdf" };
-
-      console.log(`[parsePDF] OCR → ${transactions.length} tx (${skipped} skipped, timedOut=${timedOut})`);
-      return {
-        transactions, bank, detected_currency, skipped,
-        parse_method: "pdf-ocr",
-        ...(timedOut ? { warning: "Partial results — statement may be incomplete due to processing time" } : {}),
-      };
-    } catch (ocrErr: any) {
-      console.error("[parsePDF] OCR failed:", ocrErr?.message);
-      return { locked: true, error: "locked_pdf" };
-    }
-  };
-
+  // ── Step 1: Try free text extraction ──────────────────────────────────────
   try {
     const pdfParse: (buf: Buffer, opts?: any) => Promise<any> = _require("pdf-parse");
     const pdfData = await pdfParse(buffer);
     const textLength = (pdfData.text?.trim() || "").length;
-    const pageCount = pdfData.numpages || 1;
 
-    // ── LOCKED / ENCRYPTED PDF → try OCR fallback ──────────────────────────
-    if (textLength < 100) {
-      console.log(`[parsePDF] Locked PDF (textLength=${textLength}, pages=${pageCount}) → OCR…`);
-      return runOCR();
+    if (textLength >= 100) {
+      const text = pdfData.text;
+      const bank = detectBank(text);
+      const detected_currency = detectCurrency(text);
+      const { transactions, skipped } = parseLinesIntoTransactions(text, detected_currency);
+
+      if (transactions.length >= 5) {
+        console.log(`[parsePDF] ✅ Text extraction → ${transactions.length} tx`);
+        return { transactions, bank, detected_currency, parse_method: "pdf-lines", skipped };
+      }
+      console.log(`[parsePDF] Text extraction weak (${transactions.length} tx) → trying AI Vision`);
+    } else {
+      console.log(`[parsePDF] Short text (${textLength} chars) → trying AI Vision`);
     }
+  } catch (e: any) {
+    console.log(`[parsePDF] pdf-parse threw: ${e?.message} → trying AI Vision`);
+  }
 
-    // ── NORMAL DIGITAL PDF ──────────────────────────────────────────────────
-    console.log(`[parsePDF] Normal PDF (textLength=${textLength}) → text extraction`);
-    const text = pdfData.text;
-    const bank = detectBank(text);
-    const detected_currency = detectCurrency(text);
-    const { transactions, skipped } = parseLinesIntoTransactions(text, detected_currency);
+  // ── Step 2: AI Vision ──────────────────────────────────────────────────────
+  if (!process.env.OPENAI_API_KEY) {
+    console.log("[parsePDF] No OPENAI_API_KEY — returning locked");
+    return { locked: true };
+  }
 
-    if (transactions.length === 0) {
-      return { error: "Could not extract transactions from PDF. Try exporting as CSV from your bank instead." };
-    }
-
-    console.log(`[parsePDF] Text extraction → ${transactions.length} tx (${skipped} skipped)`);
-    return { transactions, bank, detected_currency, parse_method: "pdf-lines", skipped };
-  } catch (err: any) {
-    console.error("[parsePDF] pdf-parse threw:", err?.message, "→ trying OCR fallback");
-    return runOCR();
+  try {
+    const images = await pdfToImages(buffer, 10, onProgress);
+    if (images.length === 0) return { locked: true };
+    return await readWithAI(images, "document.pdf", onProgress);
+  } catch (e: any) {
+    console.error("[parsePDF] AI Vision failed:", e?.message);
+    return { error: "Could not read this document. Try uploading a clearer version or download as CSV from your bank." };
   }
 }
 
@@ -749,10 +802,40 @@ export async function detectAndParse(
   onProgress?: (evt: OcrProgress) => void
 ): Promise<ParseResult> {
   const lc = filename.toLowerCase();
+
+  // CSV — always instant, no AI needed
   if (lc.endsWith(".csv") || mimeType.includes("csv") || mimeType.includes("text/plain")) {
     return parseCSV(buffer);
-  } else if (lc.endsWith(".pdf") || mimeType.includes("pdf")) {
+  }
+
+  // Image uploaded directly — send straight to AI Vision
+  if (
+    mimeType.startsWith("image/") ||
+    lc.endsWith(".jpg") || lc.endsWith(".jpeg") ||
+    lc.endsWith(".png") || lc.endsWith(".webp")
+  ) {
+    if (!process.env.OPENAI_API_KEY) {
+      return { error: "AI scanning is not configured. Please try uploading a CSV export instead." };
+    }
+    console.log(`[detectAndParse] Image file → AI Vision: ${filename}`);
+    onProgress?.({ type: "pages", count: 1 });
+    return readWithAI([buffer], filename, onProgress);
+  }
+
+  // PDF — text extraction first, then AI Vision fallback
+  if (lc.endsWith(".pdf") || mimeType.includes("pdf")) {
     return parsePDF(buffer, onProgress);
   }
-  return { error: "Only PDF and CSV files are supported. Image scanning coming soon!" };
+
+  return { error: "Only PDF, CSV, and image files are supported." };
+}
+
+// ─── STARTUP STATUS LOG ───────────────────────────────────────────────────────
+
+export function logDocumentParserStatus() {
+  if (process.env.OPENAI_API_KEY) {
+    console.log("✅ AI Vision enabled — all PDF types and images supported");
+  } else {
+    console.log("⚠️  No OPENAI_API_KEY — locked/scanned PDFs will show help card");
+  }
 }

@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { startNotificationCron } from "./jobs/notificationCron";
 import { seedCurrencies, seedDemoUser } from "./jobs/seed";
 import { startTelegramBot, startTelegramCrons } from "./telegram-bot";
+import { logDocumentParserStatus } from "./document-parser";
 
 const rawPort = process.env["PORT"];
 
@@ -26,6 +27,7 @@ app.listen(port, async (err) => {
   console.log("DB connected:", !!process.env.DATABASE_URL);
   console.log("JWT_SECRET set:", !!process.env.JWT_SECRET);
 
+  logDocumentParserStatus();
   await seedCurrencies();
   await seedDemoUser();
   startNotificationCron();
