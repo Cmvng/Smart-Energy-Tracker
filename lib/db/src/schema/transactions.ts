@@ -2,6 +2,7 @@ import { pgTable, text, timestamp, varchar, decimal, boolean } from "drizzle-orm
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { accountsTable } from "./accounts";
+import { documentImportsTable } from "./document_imports";
 
 export const transactionsTable = pgTable("transactions", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -16,6 +17,7 @@ export const transactionsTable = pgTable("transactions", {
   synced: boolean("synced").notNull().default(true),
   created_at: timestamp("created_at").notNull().defaultNow(),
   deleted_at: timestamp("deleted_at"),
+  import_id: text("import_id").references(() => documentImportsTable.id, { onDelete: "set null" }),
 });
 
 export const insertTransactionSchema = createInsertSchema(transactionsTable).omit({ id: true, created_at: true });

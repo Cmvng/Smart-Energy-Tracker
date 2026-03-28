@@ -1,0 +1,413 @@
+Add document import feature to Smart i-n-E Tracker.
+FREE methods ONLY — no OpenAI, no paid APIs.
+Use pdf-parse for PDFs and csv-parse for CSV files.
+Images are NOT supported yet (requires paid AI).
+
+═══════════════════════════════════════════════
+INSTALL PACKAGES
+═══════════════════════════════════════════════
+npm install pdf-parse csv-parse multer
+
+═══════════════════════════════════════════════
+DATABASE
+═══════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS document_imports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES users(id),
+  filename text,
+  file_type text,
+  status text DEFAULT 'pending',
+  total_found integer DEFAULT 0,
+  total_imported integer DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE transactions
+  ADD COLUMN IF NOT EXISTS
+  import_id uuid REFERENCES document_imports(id);
+
+═══════════════════════════════════════════════
+BACKEND — PARSER (server/document-parser.ts)
+═══════════════════════════════════════════════
+
+FUNCTION 1 — parseCSV(buffer):
+Parse CSV bank statement exports.
+
+Step 1: Convert buffer to string, detect delimiter
+(comma or semicolon — try both, use whichever 
+gives more columns)
+
+Step 2: Use csv-parse to parse into rows
+
+Step 3: Auto-detect column positions by checking
+header row for these common column names
+(case insensitive):
+
+Date column: 'date', 'transaction date', 
+  'trans date', 'value date', 'posting date'
+
+Description column: 'description', 'details',
+  'narrative', 'merchant', 'particulars',
+  'transaction details', 'remarks', 'memo'
+
+Amount column: 'amount', 'value', 'transaction amount'
+
+Debit column (expense): 'debit', 'dr', 'withdrawals',
+  'debit amount', 'money out'
+
+Credit column (income): 'credit', 'cr', 'deposits',
+  'credit amount', 'money in'
+
+Step 4: For each data row:
+- Extract date — try these formats:
+  DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD,
+  DD-MM-YYYY, DD MMM YYYY, DD MMM YY
+  Convert to ISO: YYYY-MM-DD
+- Extract description — clean up extra spaces
+- Extract amount:
+  If separate debit/credit columns:
+    debit value → expense (positive number)
+    credit value → income (positive number)
+  If single amount column:
+    negative number → expense
+    positive number → income
+  Strip currency symbols: $, £, €, ₦, ¥, ₹
+  Strip commas from numbers: "1,234.56" → 1234.56
+- Skip rows where amount is 0 or empty
+- Skip rows that look like balance/summary rows
+  (description contains: 'balance', 'opening', 
+   'closing', 'brought forward', 'total')
+
+Step 5: Return array of:
+{
+  date: 'YYYY-MM-DD',
+  description: string (max 100 chars),
+  amount: number (always positive),
+  type: 'income' | 'expense',
+  currency: 'USD' (default, user can change),
+  confidence: 'high'
+}
+
+If less than 1 transaction found:
+Return { error: 'Could not parse CSV. Please check the file format.' }
+
+FUNCTION 2 — parsePDF(buffer):
+Use pdf-parse to extract all text from PDF.
+
+const pdfData = await pdfParse(buffer)
+const text = pdfData.text
+
+Step 1: Split into lines, clean up whitespace
+
+Step 2: For each line, try to match transaction pattern:
+
+DATE PATTERNS (try all):
+- \d{2}[\/\-]\d{2}[\/\-]\d{4}  (DD/MM/YYYY)
+- \d{4}[\/\-]\d{2}[\/\-]\d{2}  (YYYY-MM-DD)
+- \d{2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}
+- \d{2}(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\d{2,4}
+
+AMOUNT PATTERNS:
+- [\d,]+\.?\d{0,2} (numbers with commas/decimals)
+- Common formats: 1,234.56 or 1234.56 or 1,234
+
+TYPE DETECTION from keywords in same line:
+Income keywords: CREDIT, CR, DEPOSIT, SALARY, 
+  PAYMENT RECEIVED, TRANSFER IN, INFLOW,
+  REVERSAL, REFUND, CASHBACK
+Expense keywords: DEBIT, DR, WITHDRAWAL, PURCHASE,
+  POS, ATM, TRANSFER OUT, OUTFLOW, PAYMENT TO,
+  CHARGE, FEE, BILL
+
+Step 3: Line grouping strategy:
+Many bank PDFs put date on one line, 
+description on next line, amount on the line after.
+Group consecutive lines: if line has a date but 
+no amount, look at next 1-2 lines for the amount.
+
+Step 4: Build transaction objects same format as CSV.
+Mark confidence:
+- 'high': date + amount + clear type keyword found
+- 'medium': date + amount found, type guessed from sign
+- 'low': date found but amount unclear
+
+Step 5: Deduplicate — remove rows where date + 
+amount + description are identical.
+
+Step 6: Sort by date ascending.
+
+Return transactions array.
+If less than 1 found: 
+{ error: 'Could not extract transactions from PDF. 
+  Try exporting as CSV from your bank instead.' }
+
+MAIN FUNCTION — detectAndParse(buffer, filename, mimeType):
+if filename.endsWith('.csv') or mimeType includes 'csv':
+  return await parseCSV(buffer)
+else if filename.endsWith('.pdf') or mimeType includes 'pdf':
+  return await parsePDF(buffer)
+else:
+  return { 
+    error: 'Only PDF and CSV files are supported. 
+    Image scanning coming soon!' 
+  }
+
+═══════════════════════════════════════════════
+BACKEND — API ROUTES
+═══════════════════════════════════════════════
+
+POST /api/documents/upload:
+- multer memoryStorage (don't save to disk)
+- Accept field name: 'document'
+- Max size: 10MB
+- Only allow: .pdf .csv
+- If wrong type: return 400 { error: 'Only PDF and CSV files supported' }
+
+Process:
+1. Create document_imports record: status='processing'
+2. Call detectAndParse(req.file.buffer, filename, mimetype)
+3. If error returned: 
+   update status='failed'
+   return 400 { error: message }
+4. If success:
+   update document_imports: 
+     status='parsed', total_found=count
+   return 200:
+   {
+     import_id: uuid,
+     filename: string,
+     file_type: 'pdf' | 'csv',
+     transactions: [...],
+     count: number
+   }
+
+POST /api/documents/confirm:
+Body: { import_id, transactions: [...selected] }
+
+For each selected transaction:
+1. Find user's account_id
+2. Look up rate: SELECT rate_to_usd FROM currencies 
+   WHERE code = transaction.currency
+   If not found: use 1.0
+3. INSERT into transactions:
+   account_id, type, amount_original,
+   currency_code, amount_usd, fx_rate_used,
+   notes=description, transacted_at=date,
+   import_id=import_id
+4. After all inserts:
+   UPDATE document_imports SET 
+     status='completed',
+     total_imported=count
+   WHERE id=import_id
+
+Return:
+{
+  imported: count,
+  summary: {
+    total_income_usd,
+    total_expense_usd,
+    net_usd
+  }
+}
+
+GET /api/documents/history:
+SELECT * FROM document_imports 
+WHERE user_id=$1 
+ORDER BY created_at DESC
+
+DELETE /api/documents/:id:
+UPDATE transactions SET deleted_at=NOW() 
+WHERE import_id=$1
+DELETE FROM document_imports WHERE id=$1
+Return { success: true }
+
+═══════════════════════════════════════════════
+FRONTEND — IMPORT PAGE
+═══════════════════════════════════════════════
+Create client/src/pages/import.tsx
+
+Add to bottom nav as 4th tab between 
+Analytics and Settings: 📂 icon, label "Import"
+On desktop sidebar: add "📂 Import" link
+
+PAGE LAYOUT:
+
+HEADER:
+Navy bar: "Import Transactions"
+Subtitle: "Upload your bank statement or CSV"
+
+UPLOAD SECTION:
+
+Large upload box (full width, 180px tall):
+border: 2px dashed rgba(0,211,127,0.4)
+border-radius: 16px
+background: rgba(0,211,127,0.05)
+display flex, align-items center, 
+justify-content center, flex-direction column
+gap: 8px
+cursor: pointer
+
+Inside:
+📂 emoji — font-size 40px
+"Tap to upload your bank statement" — 16px bold
+"PDF or CSV — up to 10MB" — 13px grey
+Drag and drop also works on desktop
+
+Hidden file input:
+accept=".pdf,.csv"
+onChange triggers upload process
+
+When file is selected (before upload):
+Show inside the box:
+- File name in green bold
+- File size in grey
+- ✕ remove button top right of box
+- "Scan Document →" green button below box
+  full width, 52px, border-radius 26px
+
+Supported formats info:
+3 info cards below upload box in a row:
+Card 1: 📄 "Bank Statement PDF"
+  "Exported from your bank's app or website"
+Card 2: 📊 "CSV Export"  
+  "Downloaded transaction history file"
+Card 3: 🔜 "Receipt Images"
+  "Coming soon — premium feature"
+Each card: white bg, border-radius 8px, 
+  padding 12px, text-align center, font-size 12px
+
+LOADING STATE (while scanning):
+Replace upload box with:
+Centered spinner (CSS animation)
+Cycling messages every 2 seconds:
+  "Reading your document..."
+  "Finding transactions..."
+  "Almost done..."
+
+REVIEW STATE (after successful scan):
+
+Success banner:
+green background, border-radius 8px, padding 12px
+"✅ Found [X] transactions in [filename]"
+subtext: "Review and select which ones to import"
+
+Select all / Deselect all buttons (small, outlined)
+
+TRANSACTION LIST:
+Each row — white card, border-radius 8px,
+margin-bottom 8px, padding 12px:
+
+Row layout:
+[checkbox 24px] [date] [description] [amount] [type badge]
+
+checkbox: large, easy to tap, 
+  high/medium confidence = checked by default
+  low confidence = unchecked by default
+
+date: grey, 12px, left side
+
+description: bold 14px, truncated with ellipsis
+  if too long, full text on tap
+
+amount: right side
+  income → green, "+$X.XX"
+  expense → red, "-$X.XX"
+
+type badge: small pill, tappable to toggle:
+  income → green "💰 Income"
+  expense → red "💸 Expense"
+  Toggling changes the type for that row
+
+confidence badge (only if medium or low):
+  medium → amber pill "⚠️ Review"
+  low → red pill "❓ Check"
+
+Tapping anywhere on row (not just checkbox) 
+toggles the checkbox.
+
+STICKY SUMMARY BAR at bottom of list:
+Fixed bottom, above bottom nav bar
+white background, border-top, padding 10px 16px
+"[X] selected  💚 $X  ❤️ $X  Net: $X"
+Updates live as user selects/deselects
+
+"Import [X] Transactions →" button:
+full width, green, 52px, border-radius 26px
+disabled and grey if 0 selected
+enabled and green if 1+ selected
+
+On tap:
+1. Show loading: "Saving [X] transactions..."
+2. POST /api/documents/confirm
+3. On success:
+   Full screen success state:
+   Large ✅ checkmark (animated)
+   "Successfully imported!" bold 24px
+   "[X] transactions added to your history"
+   Summary: Income $X · Expenses $X · Net $X
+   Two buttons:
+   "View Dashboard →" (green, full width)
+   "Import Another" (outlined, full width)
+
+4. On error: red toast with error message
+
+IMPORT HISTORY SECTION:
+Below upload area, collapsible:
+Title: "Previous imports" with ▼ chevron
+Tap to expand/collapse
+
+When expanded, list of past imports:
+Each row:
+- 📄 or 📊 icon based on file type
+- Filename bold
+- Date grey small
+- "[X] transactions imported" green
+- Status badge: completed/failed
+- 🗑️ delete button on right
+  Confirm: "Delete this import and its 
+  [X] transactions?"
+
+EMPTY HISTORY: "No imports yet" grey text
+
+═══════════════════════════════════════════════
+ERROR STATES TO HANDLE
+═══════════════════════════════════════════════
+Show friendly error messages for:
+
+"Could not read this PDF" →
+"This PDF appears to be scanned or image-based.
+ Try exporting as CSV from your bank's app instead.
+ Most banks offer a 'Download transactions' or 
+ 'Export to CSV' option in their app or website."
+
+"Could not parse CSV" →
+"We couldn't read the column structure.
+ Make sure it has headers like Date, Description, 
+ Amount. Try downloading directly from your bank."
+
+"File too large" →
+"File is too large. Maximum size is 10MB.
+ Try exporting a shorter date range."
+
+"Wrong file type" →
+"Only PDF and CSV files are supported right now.
+ Image scanning (JPG/PNG) is coming soon!"
+
+═══════════════════════════════════════════════
+FINAL STEPS
+═══════════════════════════════════════════════
+After building:
+1. npm install pdf-parse csv-parse
+2. cd client && npm run build
+3. Restart server
+4. Test with this CSV (create test.csv):
+   Date,Description,Amount
+   01/03/2026,Salary payment,1200.00
+   03/03/2026,Groceries,-45.00
+   05/03/2026,Freelance payment,500.00
+   07/03/2026,Electricity bill,-80.00
+   10/03/2026,Client payment,300.00
+5. Upload test.csv through the Import page
+6. Confirm 5 transactions are found and displayed
+7. Import all 5 and confirm they appear in dashboard
+8. Show console output from parsing

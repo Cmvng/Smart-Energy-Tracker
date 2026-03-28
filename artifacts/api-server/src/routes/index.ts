@@ -9,6 +9,7 @@ import exportRouter from "./exportRoutes";
 import notificationsRouter from "./notifications";
 import telegramRouter from "./telegram";
 import avatarRouter from "./avatar";
+import documentsRouter from "./documents";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use("/user", avatarRouter);
 router.use("/export", exportRouter);
 router.use("/notifications", notificationsRouter);
 router.use("/telegram", telegramRouter);
+router.use("/documents", documentsRouter);
 
 export default router;

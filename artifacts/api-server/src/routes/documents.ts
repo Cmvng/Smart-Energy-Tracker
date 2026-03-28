@@ -1,0 +1,175 @@
+import { Router, Response } from "express";
+import multer from "multer";
+import { db, pool } from "@workspace/db";
+import { documentImportsTable, transactionsTable, accountsTable, currenciesTable } from "@workspace/db/schema";
+import { eq, and, isNull } from "drizzle-orm";
+import { requireAuth, AuthRequest } from "../middlewares/auth";
+import { detectAndParse } from "../document-parser";
+
+const router = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = file.originalname.toLowerCase().endsWith(".pdf") ||
+      file.originalname.toLowerCase().endsWith(".csv") ||
+      file.mimetype.includes("pdf") ||
+      file.mimetype.includes("csv") ||
+      file.mimetype === "text/plain";
+    if (ok) cb(null, true);
+    else cb(new Error("WRONG_TYPE"));
+  },
+});
+
+router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
+  upload.single("document")(req as any, res as any, async (err: any) => {
+    if (err) {
+      if (err.message === "WRONG_TYPE") {
+        res.status(400).json({ error: "Only PDF and CSV files are supported." });
+      } else if (err.code === "LIMIT_FILE_SIZE") {
+        res.status(400).json({ error: "File is too large. Maximum size is 10MB." });
+      } else {
+        res.status(400).json({ error: err.message || "Upload failed" });
+      }
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ error: "No file provided." });
+      return;
+    }
+
+    const filename = req.file.originalname;
+    const fileType = filename.toLowerCase().endsWith(".pdf") ? "pdf" : "csv";
+
+    let importRecord: any;
+    try {
+      const [rec] = await db.insert(documentImportsTable).values({
+        user_id: req.userId!,
+        filename,
+        file_type: fileType,
+        status: "processing",
+      }).returning();
+      importRecord = rec;
+    } catch (e) {
+      res.status(500).json({ error: "Could not create import record." });
+      return;
+    }
+
+    const result = await detectAndParse(req.file.buffer, filename, req.file.mimetype);
+
+    if (result.error || !result.transactions) {
+      await db.update(documentImportsTable).set({ status: "failed" }).where(eq(documentImportsTable.id, importRecord.id));
+      res.status(400).json({ error: result.error || "Parse failed" });
+      return;
+    }
+
+    await db.update(documentImportsTable).set({
+      status: "parsed",
+      total_found: result.transactions.length,
+    }).where(eq(documentImportsTable.id, importRecord.id));
+
+    res.json({
+      import_id: importRecord.id,
+      filename,
+      file_type: fileType,
+      transactions: result.transactions,
+      count: result.transactions.length,
+    });
+  });
+});
+
+router.post("/confirm", requireAuth, async (req: AuthRequest, res: Response) => {
+  const { import_id, transactions } = req.body;
+  if (!import_id || !Array.isArray(transactions) || transactions.length === 0) {
+    res.status(400).json({ error: "import_id and transactions[] are required." });
+    return;
+  }
+
+  try {
+    const [account] = await db.select().from(accountsTable).where(eq(accountsTable.user_id, req.userId!));
+    if (!account) {
+      res.status(404).json({ error: "No account found for this user." });
+      return;
+    }
+
+    let totalIncomeUsd = 0;
+    let totalExpenseUsd = 0;
+    let imported = 0;
+
+    for (const tx of transactions) {
+      const currency = (tx.currency || "USD").toUpperCase();
+      const rows = await db.select().from(currenciesTable).where(eq(currenciesTable.code, currency));
+      const rate = rows[0] ? parseFloat(rows[0].rate_to_usd) : 1.0;
+      const amountUsd = parseFloat(tx.amount) * rate;
+
+      const txDate = tx.date ? new Date(tx.date) : new Date();
+
+      await db.insert(transactionsTable).values({
+        account_id: account.id,
+        type: tx.type,
+        amount_original: String(parseFloat(tx.amount).toFixed(2)),
+        currency_code: currency,
+        amount_usd: String(amountUsd.toFixed(2)),
+        fx_rate_used: String(rate.toFixed(8)),
+        notes: tx.description || null,
+        transacted_at: txDate,
+        import_id,
+      });
+
+      if (tx.type === "income") totalIncomeUsd += amountUsd;
+      else totalExpenseUsd += amountUsd;
+      imported++;
+    }
+
+    await db.update(documentImportsTable).set({
+      status: "completed",
+      total_imported: imported,
+    }).where(eq(documentImportsTable.id, import_id));
+
+    res.json({
+      imported,
+      summary: {
+        total_income_usd: parseFloat(totalIncomeUsd.toFixed(2)),
+        total_expense_usd: parseFloat(totalExpenseUsd.toFixed(2)),
+        net_usd: parseFloat((totalIncomeUsd - totalExpenseUsd).toFixed(2)),
+      },
+    });
+  } catch (err: any) {
+    req.log?.error?.({ err }, "Confirm import error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/history", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const imports = await db.select().from(documentImportsTable)
+      .where(eq(documentImportsTable.user_id, req.userId!))
+      .orderBy(documentImportsTable.created_at);
+    res.json(imports.reverse());
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    const [imp] = await db.select().from(documentImportsTable)
+      .where(and(eq(documentImportsTable.id, id), eq(documentImportsTable.user_id, req.userId!)));
+    if (!imp) {
+      res.status(404).json({ error: "Import not found." });
+      return;
+    }
+
+    await pool.query(`UPDATE transactions SET deleted_at = NOW() WHERE import_id = $1`, [id]);
+    await db.delete(documentImportsTable).where(eq(documentImportsTable.id, id));
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+export default router;
