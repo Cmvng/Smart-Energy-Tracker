@@ -849,6 +849,19 @@ export async function parsePDF(
   }
 }
 
+// ─── EXCEL → CSV CONVERTER ────────────────────────────────────────────────────
+
+async function excelToCSV(buffer: Buffer): Promise<string> {
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.read(buffer, { type: "buffer" });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) throw new Error("Excel file has no sheets");
+  const sheet = workbook.Sheets[sheetName];
+  const csv = XLSX.utils.sheet_to_csv(sheet);
+  console.log(`[excelToCSV] Converted sheet "${sheetName}", CSV length: ${csv.length}`);
+  return csv;
+}
+
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
 export async function detectAndParse(
@@ -859,31 +872,29 @@ export async function detectAndParse(
 ): Promise<ParseResult> {
   const lc = filename.toLowerCase();
 
-  // CSV — always instant, no AI needed
+  // Excel — convert to CSV first, then parse as CSV
+  if (lc.endsWith(".xlsx") || lc.endsWith(".xls") ||
+      mimeType.includes("spreadsheet") || mimeType.includes("vnd.ms-excel")) {
+    try {
+      console.log(`[detectAndParse] Excel file → converting to CSV: ${filename}`);
+      const csvText = await excelToCSV(buffer);
+      const csvBuffer = Buffer.from(csvText, "utf-8");
+      const result = await parseCSV(csvBuffer);
+      // Mark as excel in parse_method for display
+      if (result.parse_method) result.parse_method = "csv";
+      return result;
+    } catch (e: any) {
+      console.error("[detectAndParse] Excel conversion failed:", e?.message);
+      return { error: "Could not read this Excel file. Try saving it as CSV from your spreadsheet app." };
+    }
+  }
+
+  // CSV — always instant
   if (lc.endsWith(".csv") || mimeType.includes("csv") || mimeType.includes("text/plain")) {
     return parseCSV(buffer);
   }
 
-  // Image uploaded directly — send straight to AI Vision
-  if (
-    mimeType.startsWith("image/") ||
-    lc.endsWith(".jpg") || lc.endsWith(".jpeg") ||
-    lc.endsWith(".png") || lc.endsWith(".webp")
-  ) {
-    if (!process.env.OPENAI_API_KEY) {
-      return { error: "AI scanning is not configured. Please try uploading a CSV export instead." };
-    }
-    console.log(`[detectAndParse] Image file → AI Vision: ${filename}`);
-    onProgress?.({ type: "pages", count: 1 });
-    return readWithAI([buffer], filename, onProgress);
-  }
-
-  // PDF — text extraction first, then AI Vision fallback
-  if (lc.endsWith(".pdf") || mimeType.includes("pdf")) {
-    return parsePDF(buffer, onProgress);
-  }
-
-  return { error: "Only PDF, CSV, and image files are supported." };
+  return { error: "Only CSV and Excel files are supported. Please download your statement from your bank app." };
 }
 
 // ─── STARTUP STATUS LOG ───────────────────────────────────────────────────────

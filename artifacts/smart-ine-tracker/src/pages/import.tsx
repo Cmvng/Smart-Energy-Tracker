@@ -118,12 +118,16 @@ export default function Import() {
     return () => clearTimeout(t);
   }, [stage]);
 
-  const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".webp"];
   const handleFile = (f: File) => {
     const lc = f.name.toLowerCase();
-    const allowed = lc.endsWith(".pdf") || lc.endsWith(".csv") || IMAGE_EXTS.some((e) => lc.endsWith(e));
+    if (lc.endsWith(".pdf") || lc.endsWith(".jpg") || lc.endsWith(".jpeg") || lc.endsWith(".png") || lc.endsWith(".webp")) {
+      setErrorMsg("PDF upload is not supported yet. Please download your statement as CSV from your bank app instead.");
+      setStage("error");
+      return;
+    }
+    const allowed = lc.endsWith(".csv") || lc.endsWith(".xlsx") || lc.endsWith(".xls");
     if (!allowed) {
-      setErrorMsg("Supported formats: PDF, CSV, JPG, PNG, WebP.");
+      setErrorMsg("Please upload a CSV or Excel file. Download your statement from your bank app.");
       setStage("error");
       return;
     }
@@ -156,13 +160,9 @@ export default function Import() {
     if (!file || !token) return;
     setStage("scanning");
     scanMsgRef.current = 0;
-    setScanMsg("Reading your document...");
-    setOcrTotal(0);
-    setOcrProcessed(0);
+    setScanMsg("Reading your file...");
     setShowSlowMsg(false);
 
-    const lc = file.name.toLowerCase();
-    const isAIBased = lc.endsWith(".pdf") || IMAGE_EXTS.some((e) => lc.endsWith(e));
     const formData = new FormData();
     formData.append("document", file);
 
@@ -173,48 +173,7 @@ export default function Import() {
         body: formData,
       });
 
-      // ── PDF / Image → read SSE stream ─────────────────────────────────────
-      if (isAIBased && res.headers.get("content-type")?.includes("text/event-stream")) {
-        const reader = res.body!.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-
-          const parts = buf.split("\n\n");
-          buf = parts.pop() ?? "";
-
-          for (const part of parts) {
-            const match = part.match(/^data:\s*(.+)$/m);
-            if (!match) continue;
-            try {
-              const evt = JSON.parse(match[1]);
-              if (evt.type === "pages") {
-                setOcrTotal(evt.count ?? 0);
-                setScanMsg(`📸 Converting ${evt.count} page${evt.count !== 1 ? "s" : ""} to images...`);
-              } else if (evt.type === "page_done") {
-                setOcrProcessed(evt.current ?? 0);
-                setScanMsg(`🔍 Reading page ${evt.current} of ${evt.total}...`);
-              } else if (evt.type === "result") {
-                applyResult(evt);
-              } else if (evt.type === "locked") {
-                setStage("locked");
-              } else if (evt.type === "error") {
-                setErrorMsg(friendlyError(evt.message || "Could not read this file."));
-                setStage("error");
-              }
-            } catch {}
-          }
-        }
-        return;
-      }
-
-      // ── CSV (or non-SSE fallback) → plain JSON ─────────────────────────────
       const data = await res.json();
-      if (data.locked) { setStage("locked"); return; }
       if (!res.ok) {
         setErrorMsg(friendlyError(data.error || "Could not read this file."));
         setStage("error");
@@ -279,8 +238,8 @@ export default function Import() {
   const selectedExpense = txList.filter((t) => t.selected && t.type === "expense").reduce((s, t) => s + t.amount, 0);
 
   function friendlyError(msg: string) {
-    if (msg.toLowerCase().includes("image") || msg.toLowerCase().includes("scan")) {
-      return "This PDF appears to be scanned or image-based. Try exporting as CSV from your bank's app instead. Most banks offer a 'Download transactions' or 'Export to CSV' option.";
+    if (msg.toLowerCase().includes("pdf")) {
+      return "PDF upload is not supported yet. Please download your statement as CSV from your bank app instead.";
     }
     if (msg.toLowerCase().includes("csv") || msg.toLowerCase().includes("column") || msg.toLowerCase().includes("parse")) {
       return "We couldn't read the column structure. Make sure it has headers like Date, Description, Amount. Try downloading directly from your bank.";
@@ -288,8 +247,8 @@ export default function Import() {
     if (msg.toLowerCase().includes("large") || msg.toLowerCase().includes("10mb")) {
       return "File is too large. Maximum size is 10MB. Try exporting a shorter date range.";
     }
-    if (msg.toLowerCase().includes("type") || msg.toLowerCase().includes("supported")) {
-      return "Only PDF and CSV files are supported right now.";
+    if (msg.toLowerCase().includes("type") || msg.toLowerCase().includes("supported") || msg.toLowerCase().includes("only csv")) {
+      return "Please upload a CSV or Excel file. Download your statement from your bank app.";
     }
     return msg;
   }
@@ -329,7 +288,7 @@ export default function Import() {
       {/* Header */}
       <div className="text-white px-5 pt-12 pb-6" style={{ background: NAVY }}>
         <h1 className="text-2xl font-bold tracking-tight">Import Transactions</h1>
-        <p className="text-white/60 text-sm mt-0.5">Upload your bank statement or CSV</p>
+        <p className="text-white/60 text-sm mt-0.5">Upload a CSV or Excel export from your bank</p>
       </div>
 
       <div className="flex-1 px-4 pt-4">
@@ -382,7 +341,7 @@ export default function Import() {
                     onClick={(e) => { e.stopPropagation(); setFile(null); setStage("idle"); }}
                     className="absolute top-3 right-3 w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-sm hover:bg-gray-300"
                   >✕</button>
-                  <div className="text-3xl">📄</div>
+                  <div className="text-3xl">📊</div>
                   <p className="font-bold text-sm text-center px-4" style={{ color: GREEN }}>{file.name}</p>
                   <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(0)} KB</p>
                 </>
@@ -390,12 +349,12 @@ export default function Import() {
                 <>
                   <div className="text-5xl">📂</div>
                   <p className="font-bold text-base" style={{ color: NAVY }}>Tap to upload your bank statement</p>
-                  <p className="text-sm text-gray-400">PDF, CSV, or photo — up to 20MB</p>
+                  <p className="text-sm text-gray-400">CSV or Excel file — up to 10MB</p>
                 </>
               )}
             </div>
 
-            <input ref={fileInputRef} type="file" accept=".pdf,.csv,.jpg,.jpeg,.png,.webp" className="hidden"
+            <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
 
             {file && (
@@ -404,23 +363,35 @@ export default function Import() {
                 className="w-full h-[52px] rounded-[26px] font-bold text-white mb-4 transition-all active:scale-95"
                 style={{ background: GREEN }}
               >
-                Scan Document →
+                Import File →
               </button>
             )}
 
             {/* Format cards */}
-            <div className="grid grid-cols-3 gap-2 mb-6">
+            <div className="grid grid-cols-2 gap-3 mb-6">
               {[
-                { icon: "📄", title: "Bank Statement PDF", desc: "Exported from your bank's app" },
-                { icon: "📊", title: "CSV Export", desc: "Downloaded transaction history" },
-                { icon: "🖼️", title: "Photos & Scans", desc: "Receipts, screenshots, images" },
+                { icon: "📊", title: "CSV Export", desc: "Downloaded from your bank app" },
+                { icon: "📸", title: "Excel File", desc: "Statement exported as .xlsx" },
               ].map(({ icon, title, desc }) => (
-                <div key={title} className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm">
+                <div key={title} className="bg-white rounded-xl p-4 text-center border border-gray-100 shadow-sm">
                   <div className="text-2xl mb-1">{icon}</div>
                   <p className="text-xs font-bold text-gray-700 leading-tight mb-1">{title}</p>
                   <p className="text-xs text-gray-400 leading-tight">{desc}</p>
                 </div>
               ))}
+            </div>
+
+            {/* How to download CSV help section */}
+            <div className="bg-white rounded-2xl p-4 mb-6 border border-gray-100 shadow-sm">
+              <p className="text-sm font-bold mb-3" style={{ color: NAVY }}>How to download your CSV</p>
+              <ul className="space-y-2 text-xs text-gray-600">
+                <li>🏦 <strong>GTBank:</strong> App → Accounts → Statement → Download → CSV</li>
+                <li>🏦 <strong>Access:</strong> App → More → Statement → Export CSV</li>
+                <li>🏦 <strong>UBA:</strong> Internet banking → Statement → Download</li>
+                <li>🏦 <strong>Zenith:</strong> App → Account Statement → CSV</li>
+                <li>🏦 <strong>First Bank:</strong> Internet banking → Statement → Export</li>
+                <li className="text-gray-500">🏦 <strong>Other banks:</strong> Look for <em>Export</em> or <em>Download</em> in your statement or transaction history section</li>
+              </ul>
             </div>
           </>
         )}

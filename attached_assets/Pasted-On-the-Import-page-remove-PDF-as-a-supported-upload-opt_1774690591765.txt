@@ -1,0 +1,84 @@
+On the Import page, remove PDF as a supported 
+upload option completely for now.
+
+CHANGES:
+
+1. File input - only accept CSV and Excel:
+   accept=".csv,.xlsx,.xls"
+
+2. Upload box subtitle text:
+   "CSV or Excel file — up to 10MB"
+
+3. Remove the "Bank Statement PDF" format card
+   Replace the 3 format cards with just 2:
+   
+   Card 1: 📊 "CSV Export"
+   "Downloaded from your bank app"
+   
+   Card 2: 📸 "Excel File"  
+   "Statement exported as .xlsx"
+
+4. The red error at top that says 
+   "Supported formats: PDF, CSV, JPG, PNG, WebP"
+   Change to: 
+   "Please upload a CSV or Excel file. 
+    Download your statement from your bank app."
+
+5. Remove PDF, JPG, PNG, WebP from all 
+   accepted file types everywhere in the 
+   upload handler (multer config + frontend)
+
+6. If user somehow uploads a PDF show:
+   "PDF upload is not supported yet.
+    Please download your statement as CSV 
+    from your bank app instead."
+
+7. Add a help section below the upload box:
+   Title: "How to download your CSV"
+   Show these instructions:
+   🏦 GTBank: App → Accounts → Statement → Download → CSV
+   🏦 Access: App → More → Statement → Export CSV  
+   🏦 UBA: Internet banking → Statement → Download
+   🏦 Zenith: App → Account Statement → CSV
+   🏦 First Bank: Internet banking → Statement → Export
+   🏦 Other banks: Look for Export or Download in your 
+      statement or transaction history section
+
+8. Update the multer backend to reject anything 
+   that is not CSV or Excel:
+   fileFilter: (req, file, cb) => {
+     const allowed = [
+       'text/csv',
+       'application/vnd.ms-excel', 
+       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+       'application/csv',
+       'text/plain'
+     ]
+     const allowedExt = ['.csv', '.xlsx', '.xls']
+     const ext = path.extname(file.originalname).toLowerCase()
+     if (allowed.includes(file.mimetype) || 
+         allowedExt.includes(ext)) {
+       cb(null, true)
+     } else {
+       cb(new Error('Only CSV and Excel files are supported'))
+     }
+   }
+
+9. Add Excel parser to the backend:
+   npm install xlsx
+   
+   When an .xlsx or .xls file is uploaded:
+   const XLSX = require('xlsx')
+   const workbook = XLSX.read(buffer, {type:'buffer'})
+   const sheet = workbook.Sheets[workbook.SheetNames[0]]
+   const csvData = XLSX.utils.sheet_to_csv(sheet)
+   
+   Then pass csvData through the existing 
+   universalCSVParser — Excel becomes CSV 
+   automatically.
+
+After building:
+1. cd client && npm run build
+2. Restart server
+3. Confirm only CSV and Excel can be uploaded
+4. Test with a CSV file and confirm it works

@@ -8,18 +8,27 @@ import { detectAndParse, OcrProgress } from "../document-parser";
 
 const router = Router();
 
-const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const EXCEL_EXTS = new Set([".xlsx", ".xls"]);
+const ALLOWED_EXTS = new Set([".csv", ".xlsx", ".xls"]);
+const ALLOWED_MIMES = new Set([
+  "text/csv",
+  "application/csv",
+  "text/plain",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const lc = file.originalname.toLowerCase();
     const ext = lc.slice(lc.lastIndexOf("."));
-    const ok = lc.endsWith(".pdf") || lc.endsWith(".csv") ||
-      IMAGE_EXTS.has(ext) ||
-      file.mimetype.includes("pdf") || file.mimetype.includes("csv") ||
-      file.mimetype === "text/plain" || file.mimetype.startsWith("image/");
+    if (lc.endsWith(".pdf")) {
+      cb(new Error("PDF_NOT_SUPPORTED"));
+      return;
+    }
+    const ok = ALLOWED_EXTS.has(ext) || ALLOWED_MIMES.has(file.mimetype);
     if (ok) cb(null, true);
     else cb(new Error("WRONG_TYPE"));
   },
@@ -70,8 +79,10 @@ async function buildUploadResponse(
 router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
   upload.single("document")(req as any, res as any, async (err: any) => {
     if (err) {
-      if (err.message === "WRONG_TYPE") {
-        res.status(400).json({ error: "Only PDF and CSV files are supported." });
+      if (err.message === "PDF_NOT_SUPPORTED") {
+        res.status(400).json({ error: "PDF upload is not supported yet. Please download your statement as CSV from your bank app instead." });
+      } else if (err.message === "WRONG_TYPE") {
+        res.status(400).json({ error: "Only CSV and Excel files are supported. Please download your statement from your bank app." });
       } else if (err.code === "LIMIT_FILE_SIZE") {
         res.status(400).json({ error: "File is too large. Maximum size is 10MB." });
       } else {
@@ -94,11 +105,8 @@ router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
     const filename = req.file.originalname;
     const lc2 = filename.toLowerCase();
     const ext2 = lc2.slice(lc2.lastIndexOf("."));
-    const fileType = lc2.endsWith(".pdf") ? "pdf"
-      : IMAGE_EXTS.has(ext2) ? "image"
-      : "csv";
-    // PDFs and images both go through AI, so stream SSE for both
-    const useSSE = fileType === "pdf" || fileType === "image";
+    const fileType = EXCEL_EXTS.has(ext2) ? "excel" : "csv";
+    const useSSE = false; // CSV/Excel always use plain JSON response
 
     let importRecord: any;
     try {
