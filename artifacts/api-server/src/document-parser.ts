@@ -653,13 +653,29 @@ async function readWithAI(
   ];
 
   console.log(`[AI Vision] Sending ${imageBuffers.length} image(s) to gpt-4o for ${filename}`);
+  console.log(`[AI Vision] OpenAI key present:`, !!process.env.OPENAI_API_KEY, "length:", process.env.OPENAI_API_KEY?.length);
+  console.log(`[AI Vision] Image buffer sizes:`, imageBuffers.map((b) => b.length));
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [{ role: "user", content }],
-    max_tokens: 4000,
-    temperature: 0,
-  });
+  let response: any;
+  try {
+    response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content }],
+      max_tokens: 4000,
+      temperature: 0,
+    });
+    console.log(`[AI Vision] OpenAI response received, choices: ${response.choices?.length}`);
+  } catch (e: any) {
+    console.error("[AI Vision] OpenAI full error:", JSON.stringify({
+      message: e?.message,
+      code: e?.code,
+      status: e?.status,
+      type: e?.type,
+      error: e?.error,
+      response: e?.response?.data ?? e?.response?.body,
+    }, null, 2));
+    throw e;
+  }
 
   const total = imageBuffers.length;
   onProgress?.({ type: "page_done", current: total, total });
@@ -807,8 +823,13 @@ export async function parsePDF(
   }
 
   try {
+    console.log("[parsePDF] Starting pdfToImages, buffer size:", buffer.length);
     const images = await pdfToImages(buffer, 10, onProgress);
-    if (images.length === 0) return { locked: true };
+    console.log("[parsePDF] pdfToImages returned", images.length, "image(s)");
+    if (images.length === 0) {
+      console.error("[parsePDF] ❌ pdfToImages returned 0 images → returning locked");
+      return { locked: true };
+    }
     return await readWithAI(images, "document.pdf", onProgress);
   } catch (e: any) {
     console.error("[parsePDF] AI Vision failed:", e?.message);

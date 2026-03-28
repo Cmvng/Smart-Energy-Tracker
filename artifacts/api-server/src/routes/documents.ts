@@ -85,6 +85,12 @@ router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
       return;
     }
 
+    console.log("Upload received:", {
+      filename: req.file?.originalname,
+      size: req.file?.size,
+      mimetype: req.file?.mimetype,
+    });
+
     const filename = req.file.originalname;
     const lc2 = filename.toLowerCase();
     const ext2 = lc2.slice(lc2.lastIndexOf("."));
@@ -122,6 +128,14 @@ router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
 
       try {
         const result = await detectAndParse(req.file.buffer, filename, req.file.mimetype, onProgress);
+
+        console.log("Parse result:", JSON.stringify({
+          success: !result.locked && !result.error && !!result.transactions,
+          locked: result.locked,
+          found: result.transactions?.length,
+          method: result.parse_method,
+          error: result.error,
+        }));
 
         if (result.locked) {
           await db.update(documentImportsTable).set({ status: "failed" }).where(eq(documentImportsTable.id, importRecord.id));
