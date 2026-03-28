@@ -1,0 +1,263 @@
+Add these 5 features to make the app ready 
+for international users and strangers.
+
+═══════════════════════════════════════════════
+1. REAL EXCHANGE RATES (most important)
+═══════════════════════════════════════════════
+The exchange rates in the database are placeholder
+values. Fix this permanently:
+
+On server startup:
+1. Check when currencies.rate_updated_at was 
+   last updated
+2. If more than 6 hours ago OR if rate_to_usd 
+   is 1.0 for non-USD currencies:
+   Automatically call the Open Exchange Rates API
+   using EXCHANGE_RATES_API_KEY
+   Update all rates in the database
+3. Set up a cron job to refresh rates every 
+   6 hours automatically:
+   cron.schedule('0 */6 * * *', refreshRates)
+4. If API key is missing or call fails:
+   Use these hardcoded approximate rates as fallback
+   (better than all 1.0):
+   NGN: 0.00065, GHS: 0.068, KES: 0.0077,
+   ZAR: 0.054, GBP: 0.79, EUR: 0.92,
+   INR: 0.012, JPY: 0.0067, CNY: 0.14,
+   BRL: 0.20, MXN: 0.058, AED: 0.27,
+   SAR: 0.27, PKR: 0.0036, EGP: 0.032,
+   TZS: 0.00039, CHF: 1.10, CAD: 0.74,
+   AUD: 0.65, UGX: 0.00027, RWF: 0.00072,
+   XOF: 0.0016, MAD: 0.099, TND: 0.32,
+   SGD: 0.74, MYR: 0.22, THB: 0.028,
+   PHP: 0.017, IDR: 0.000063, HKD: 0.13
+   
+   Update these fallback rates in the DB on startup
+   so users always get reasonable conversions.
+
+═══════════════════════════════════════════════
+2. PASSWORD RESET
+═══════════════════════════════════════════════
+Add forgot password flow:
+
+DATABASE:
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES users(id),
+  token text UNIQUE,
+  expires_at timestamptz,
+  used boolean DEFAULT false,
+  created_at timestamptz DEFAULT now()
+);
+
+BACKEND:
+POST /api/auth/forgot-password:
+- Accept { email }
+- Find user by email
+- If not found: return same success message 
+  (security — don't reveal if email exists)
+- Generate random 6-digit code (not a link — 
+  easier for mobile users)
+- Store in password_reset_tokens with 
+  expires_at = now + 15 minutes
+- Send email using nodemailer or log to console
+  if no email service configured:
+  Subject: "Your Smart i-n-E password reset code"
+  Body: "Your reset code is: [CODE]
+  This code expires in 15 minutes.
+  If you didn't request this, ignore this email."
+- Return { success: true, message: 'Reset code sent' }
+
+POST /api/auth/reset-password:
+- Accept { email, code, newPassword }
+- Find valid token: not expired, not used, 
+  matches email
+- If invalid: return 400 { error: 'Invalid or expired code' }
+- Hash new password with bcrypt
+- Update users.password_hash
+- Mark token as used
+- Return { success: true }
+
+FRONTEND:
+On login page, "Forgot password?" link opens 
+a 3-step flow:
+
+Step 1 — Enter email:
+Input for email address
+"Send Reset Code" button
+→ POST /api/auth/forgot-password
+
+Step 2 — Enter code:
+"Enter the 6-digit code sent to [email]"
+6 individual digit input boxes (like OTP style)
+OR single input field
+"Verify Code" button
+Resend code link (after 60 seconds)
+
+Step 3 — New password:
+"New password" input
+"Confirm password" input
+"Reset Password" button
+→ POST /api/auth/reset-password
+On success: redirect to login with toast
+"✅ Password reset! Please log in."
+
+Show this as a modal or separate small page.
+Back button to return to login at each step.
+
+═══════════════════════════════════════════════
+3. ADMIN DASHBOARD (so you can see your users)
+═══════════════════════════════════════════════
+Add a simple admin page at /admin that only 
+you can access.
+
+BACKEND:
+Add isAdmin column to users table:
+ALTER TABLE users 
+  ADD COLUMN IF NOT EXISTS is_admin boolean DEFAULT false;
+
+Set yourself as admin:
+UPDATE users SET is_admin = true 
+WHERE email = 'cmvceo1000@gmail.com';
+
+GET /api/admin/stats (requires is_admin = true):
+Return:
+{
+  total_users: number,
+  new_users_today: number,
+  new_users_this_week: number,
+  total_transactions: number,
+  transactions_today: number,
+  active_users_today: number,
+  countries: [{ currency, count }],
+  recent_signups: [
+    { name, email, created_at, 
+      transaction_count, mode }
+  ]
+}
+
+GET /api/admin/users:
+Return paginated list of all users with:
+id, name, email, nickname, mode, 
+home_currency, created_at, 
+transaction_count, last_active,
+telegram_connected (boolean)
+
+FRONTEND /admin page:
+Protected — redirect to /dashboard if 
+user is not admin.
+
+Show:
+- Total users count (big number)
+- New signups today and this week
+- Total transactions logged
+- Users by currency (shows which countries)
+- Recent signups table
+- Simple user list with search
+
+Only accessible when logged in as admin.
+Add a small "Admin" link in Settings page
+only visible when user.is_admin = true.
+
+═══════════════════════════════════════════════
+4. FEEDBACK BUTTON
+═══════════════════════════════════════════════
+Add a small "Send Feedback" button that appears
+on every page (bottom of Settings page is fine).
+
+When tapped:
+Opens a simple modal:
+- "How is your experience?" 
+  5 emoji rating: 😡 😞 😐 😊 🤩
+- "Tell us more (optional)" 
+  textarea, max 500 chars
+- "Send Feedback" button
+
+BACKEND:
+CREATE TABLE IF NOT EXISTS feedback (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES users(id),
+  rating integer, -- 1-5
+  message text,
+  page text, -- which page they were on
+  created_at timestamptz DEFAULT now()
+);
+
+POST /api/feedback:
+Save to feedback table.
+Return { success: true }
+
+Show feedback in admin dashboard:
+Recent feedback section with rating + message + 
+user name + date.
+
+═══════════════════════════════════════════════
+5. PRIVACY POLICY + TERMS PAGE
+═══════════════════════════════════════════════
+Add a simple /privacy and /terms page.
+
+These must exist before sharing publicly.
+Users should not be required to read them 
+but they must be accessible.
+
+Add small links in the footer of login and 
+register pages:
+"By signing up you agree to our Terms of Service 
+and Privacy Policy"
+Both words are clickable links.
+
+/terms page — simple text page:
+Title: "Terms of Service — Smart i-n-E Tracker"
+Sections:
+1. What the app does
+   "Smart i-n-E Tracker helps you record and 
+   track your personal income and expenses."
+2. Your data
+   "Your financial data is stored securely and 
+   is only accessible to you."
+3. No financial advice
+   "This app is a tracking tool only. It does 
+   not provide financial or investment advice."
+4. Account responsibility
+   "You are responsible for keeping your 
+   login credentials secure."
+5. Contact
+   "For support: [your email]"
+
+/privacy page — simple text page:
+Title: "Privacy Policy — Smart i-n-E Tracker"
+Sections:
+1. What we collect
+   "We collect your name, email, and the 
+   financial transactions you choose to enter."
+2. How we use it
+   "Your data is used only to provide the 
+   tracking features of this app."
+3. We never sell your data
+   "We do not sell, share, or distribute your 
+   personal data to any third parties."
+4. Data security
+   "Your data is stored in a secure PostgreSQL 
+   database. Passwords are encrypted."
+5. Deleting your data
+   "You can delete your account and all 
+   associated data by contacting us."
+6. Contact
+   "Privacy questions: [your email]"
+
+Both pages have a simple back button to return
+to login/register.
+
+═══════════════════════════════════════════════
+FINAL STEPS
+═══════════════════════════════════════════════
+After building:
+1. cd client && npm run build
+2. Restart server
+3. Confirm exchange rates are updated on startup
+   (show log: "✅ Exchange rates updated: X currencies")
+4. Confirm forgot password flow works
+5. Set cmvceo1000@gmail.com as admin
+6. Confirm /admin page loads with user stats
+7. Confirm /privacy and /terms pages exist
+8. List all features successfully added
