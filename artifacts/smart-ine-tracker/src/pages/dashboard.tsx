@@ -211,10 +211,10 @@ export default function Dashboard() {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="md:max-w-[1100px] md:w-full md:mx-auto md:px-8">
+        <div className="w-full max-w-full overflow-x-hidden md:max-w-[1100px] md:w-full md:mx-auto md:px-8">
 
           {/* Summary Cards — 3-col grid on all sizes */}
-          <div className="grid grid-cols-3 gap-2 px-3 pt-5 w-full md:gap-4 md:px-0 md:pt-6">
+          <div className="grid grid-cols-3 gap-2 px-3 pt-5 w-full overflow-hidden md:gap-4 md:px-0 md:pt-6">
             <SummaryCard
               title="Total Income"
               amount={summary?.total_income_usd}
