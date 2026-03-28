@@ -13,6 +13,7 @@ export interface UserProfile {
   notification_frequency?: string;
   avatar_url?: string;
   nickname?: string;
+  is_admin?: boolean;
   created_at?: string;
 }
 

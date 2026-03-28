@@ -1,0 +1,150 @@
+Add complete admin dashboard and feedback system.
+All logic has been tested and verified working.
+
+═══════════════════════════════════════════════
+DATABASE
+═══════════════════════════════════════════════
+ALTER TABLE users 
+  ADD COLUMN IF NOT EXISTS is_admin 
+  boolean DEFAULT false;
+
+UPDATE users SET is_admin = true 
+  WHERE email = 'cmvceo1000@gmail.com';
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES users(id),
+  rating integer CHECK (rating >= 1 AND rating <= 5),
+  message text,
+  page text,
+  created_at timestamptz DEFAULT now()
+);
+
+═══════════════════════════════════════════════
+BACKEND ROUTES
+═══════════════════════════════════════════════
+Add admin middleware:
+async function requireAdmin(req, res, next) {
+  const user = await getUserFromJWT(req)
+  if (!user || !user.is_admin) {
+    return res.status(403).json({ error: 'Unauthorized' })
+  }
+  req.user = user
+  next()
+}
+
+GET /api/admin/stats (requireAdmin):
+Run these queries and return combined result:
+{
+  total_users: SELECT COUNT(*) FROM users,
+  new_today: SELECT COUNT(*) FROM users 
+    WHERE created_at >= CURRENT_DATE,
+  new_this_week: SELECT COUNT(*) FROM users 
+    WHERE created_at >= NOW() - INTERVAL '7 days',
+  total_transactions: SELECT COUNT(*) FROM transactions 
+    WHERE deleted_at IS NULL,
+  transactions_today: SELECT COUNT(*) FROM transactions 
+    WHERE deleted_at IS NULL 
+    AND created_at >= CURRENT_DATE,
+  active_today: SELECT COUNT(DISTINCT account_id) 
+    FROM transactions 
+    WHERE deleted_at IS NULL 
+    AND created_at >= CURRENT_DATE,
+  users_by_currency: SELECT home_currency, 
+    COUNT(*) as count FROM users 
+    GROUP BY home_currency 
+    ORDER BY count DESC,
+  recent_signups: SELECT 
+    u.id, u.name, u.email, u.nickname,
+    u.mode, u.home_currency, u.created_at,
+    u.telegram_chat_id IS NOT NULL as telegram_connected,
+    COUNT(t.id) as transaction_count
+    FROM users u
+    LEFT JOIN accounts a ON a.user_id = u.id
+    LEFT JOIN transactions t ON t.account_id = a.id 
+      AND t.deleted_at IS NULL
+    GROUP BY u.id
+    ORDER BY u.created_at DESC
+    LIMIT 20
+}
+
+GET /api/admin/users (requireAdmin):
+SELECT u.id, u.name, u.email, u.nickname,
+  u.mode, u.home_currency, u.created_at,
+  u.telegram_chat_id IS NOT NULL as telegram_connected,
+  COUNT(t.id) as transaction_count
+FROM users u
+LEFT JOIN accounts a ON a.user_id = u.id
+LEFT JOIN transactions t ON t.account_id = a.id 
+  AND t.deleted_at IS NULL
+WHERE ($1::text IS NULL OR 
+  u.name ILIKE '%' || $1 || '%' OR 
+  u.email ILIKE '%' || $1 || '%')
+GROUP BY u.id
+ORDER BY u.created_at DESC
+($1 = req.query.search or null)
+
+GET /api/admin/feedback (requireAdmin):
+SELECT f.*, u.name as user_name, u.email as user_email
+FROM feedback f
+LEFT JOIN users u ON u.id = f.user_id
+ORDER BY f.created_at DESC
+
+POST /api/feedback (requires JWT, any user):
+- Validate rating is 1-5
+- INSERT into feedback table
+- Return { success: true }
+
+Update GET /api/auth/me:
+Add is_admin field to response:
+SELECT id, email, name, nickname, avatar_url,
+  mode, home_currency, notification_frequency,
+  telegram_chat_id, is_admin, created_at
+FROM users WHERE id = $1
+
+═══════════════════════════════════════════════
+FRONTEND — ADMIN PAGE
+═══════════════════════════════════════════════
+Create client/src/pages/admin.tsx
+
+Route in App.tsx:
+<Route path="/admin" element={<AdminPage />} />
+
+AdminPage component:
+- On mount: fetch /api/auth/me
+- If !user.is_admin: navigate('/dashboard')
+- Fetch /api/admin/stats and /api/admin/feedback
+- Auto-refresh every 60 seconds
+
+LAYOUT (navy #0A1628 background, full width):
+
+Header:
+<div style navy bg, white text>
+  "🔐 Admin Dashboard" left
+  "Smart i-n-E Tracker" right
+  "Welcome, [name]" subtitle
+  Refresh button top right (calls fetchData())
+</div>
+
+Stats cards row (4 cards, grid):
+Card 1: big green number = total_users, label "Total Users"
+Card 2: new_today, label "New Today"  
+Card 3: total_transactions, label "Total Transactions"
+Card 4: active_today, label "Active Today"
+Each card: dark #1a2940 background, rounded
+
+Users by Currency section:
+Title: "Users by Country"
+For each entry in users_by_currency:
+  const flagMap = {
+    NGN:'🇳🇬', GBP:'🇬🇧', USD:'🇺🇸',
+    EUR:'🇪🇺', KES:'🇰🇪', GHS:'🇬🇭',
+    ZAR:'🇿🇦', INR:'🇮🇳', AED:'🇦🇪',
+    CAD:'🇨🇦', AUD:'🇦🇺', JPY:'🇯🇵',
+    NGN:'🇳🇬', TZS:'🇹🇿', UGX:'🇺🇬'
+  }
+  Show: [flag] [currency] ─── [count] users
+  With a progress bar showing proportion
+
+Recent Signups section:
+Title: "Re

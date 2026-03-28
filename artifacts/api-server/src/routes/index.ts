@@ -10,6 +10,8 @@ import notificationsRouter from "./notifications";
 import telegramRouter from "./telegram";
 import avatarRouter from "./avatar";
 import documentsRouter from "./documents";
+import adminRouter from "./admin";
+import feedbackRouter from "./feedback";
 
 const router: IRouter = Router();
 
@@ -24,5 +26,7 @@ router.use("/export", exportRouter);
 router.use("/notifications", notificationsRouter);
 router.use("/telegram", telegramRouter);
 router.use("/documents", documentsRouter);
+router.use("/admin", adminRouter);
+router.use("/feedback", feedbackRouter);
 
 export default router;

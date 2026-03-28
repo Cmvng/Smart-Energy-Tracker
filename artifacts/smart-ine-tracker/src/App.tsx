@@ -18,6 +18,7 @@ import BottomNav from "@/components/BottomNav";
 import Sidebar from "@/components/Sidebar";
 import Landing, { hasVisited } from "@/pages/landing";
 import Onboarding, { isOnboardingDone } from "@/pages/onboarding";
+import AdminPage from "@/pages/admin";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -111,6 +112,9 @@ function AppRouter() {
         </Route>
         <Route path="/import">
           <ProtectedRoute component={Import} />
+        </Route>
+        <Route path="/admin">
+          <ProtectedRoute component={AdminPage} />
         </Route>
         <Route component={NotFound} />
       </Switch>

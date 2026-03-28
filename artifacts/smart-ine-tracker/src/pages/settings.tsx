@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 
 function compressImage(file: File): Promise<Blob> {
@@ -61,6 +62,7 @@ function Row({ label, children, last = false }: { label: string; children: React
 
 export default function Settings() {
   const { user, token, logout, setUser } = useAuth();
+  const [, setLocation] = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [currencies, setCurrencies] = useState<any[]>([]);
@@ -501,6 +503,19 @@ export default function Settings() {
             )}
           </div>
         </div>
+
+        {user?.is_admin && (
+          <Section title="Admin">
+            <button
+              onClick={() => setLocation("/admin")}
+              className="w-full flex items-center gap-3 px-4 py-3.5 active:bg-indigo-50 transition-colors min-h-[52px]"
+            >
+              <span className="text-lg">🔐</span>
+              <span className="text-sm font-semibold" style={{ color: "#4f46e5" }}>Admin Dashboard</span>
+              <span className="ml-auto text-gray-300">›</span>
+            </button>
+          </Section>
+        )}
 
         <Section title="Account">
           <button

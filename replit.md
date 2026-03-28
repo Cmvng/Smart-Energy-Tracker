@@ -36,7 +36,8 @@ A full-stack mobile-first (max 430px) Income & Expense Tracker with JWT auth, mu
 - `/history` — Full transaction history: sticky filters (date range, type, sort), real-time search, paginated list (50 at a time), ⋮ edit/delete per row, bulk select+delete mode
 - `/analytics` — 7d/30d bar chart (recharts), net P&L line chart, smart insight cards, stats row
 - `/import` — Document import: accepts PDF, CSV, JPG, PNG, WebP (up to 20MB). Processing priority: CSV (instant) → PDF text extraction (free, if ≥5 tx) → OpenAI gpt-4o Vision (PDFs + images). SSE streaming for PDFs/images: live page progress bar + "taking longer" message after 30s. Review stage: per-row currency dropdown, confidence badges, select/deselect all. Locked/unreadable → amber card with CSV download tips. Import history with delete.
-- `/settings` — User profile, home currency, individual/business mode, notification frequency, CSV export, exchange rate refresh, test reminder, logout
+- `/settings` — User profile, home currency, individual/business mode, notification frequency, CSV export, exchange rate refresh, test reminder, logout. Admin link visible for `is_admin` users.
+- `/admin` — Admin-only dashboard (no chrome): Overview (stats, currency distribution, feedback summary, recent signups), Users tab, Feedback tab. Auto-refreshes every 60s. Protected by `requireAdmin` middleware.
 
 ### Bottom Navigation
 Persistent across all protected pages: Home | Add | Analytics | Import | Settings
@@ -83,11 +84,14 @@ artifacts-monorepo/
 
 ## Database Schema
 
-1. **users** — id (uuid), email, password_hash, name, mode (individual/business), home_currency, notification_frequency, created_at
+1. **users** — id (uuid), email, password_hash, name, mode (individual/business), home_currency, notification_frequency, nickname, avatar_url, telegram_chat_id, is_admin (boolean, default false), created_at
 2. **accounts** — id (uuid), user_id (FK), type, label, created_at
 3. **transactions** — id (uuid), account_id (FK), type (income/expense), amount_original, currency_code, amount_usd, fx_rate_used, notes, transacted_at, deleted_at, synced, created_at
 4. **currencies** — code (PK), name, rate_to_usd, rate_updated_at (seeded with 20 currencies)
 5. **analytics_snapshots** — id (uuid), user_id (FK), timeframe, total_income_usd, total_expense_usd, net_usd, period_start, period_end
+6. **feedback** — id (uuid), user_id (FK nullable), rating (1-5), message (text, nullable), page (varchar, nullable), created_at
+
+**Admin user:** `cmvceo1000@gmail.com` has `is_admin = true` set directly in the DB.
 
 **FX conversion:** `rate_to_usd` is the value of 1 unit of the currency in USD (e.g., EUR=0.92 means 1 EUR = $0.92 USD).
 Formula: `amount_usd = amount_original * rate_to_usd`
@@ -123,6 +127,14 @@ Formula: `amount_usd = amount_original * rate_to_usd`
 
 ### Notifications
 - `POST /api/notifications/test` — Send a test reminder notification
+
+### Feedback
+- `POST /api/feedback` — Submit user feedback (rating 1-5, optional message + page; requireAuth)
+
+### Admin (requireAdmin — is_admin === true in DB)
+- `GET /api/admin/stats` — Aggregate stats: total users, new today/week, transactions, active today, users by currency, 20 recent signups
+- `GET /api/admin/users?search=` — All users (with search support)
+- `GET /api/admin/feedback` — All feedback with user details (joined)
 
 ## Seed Data
 

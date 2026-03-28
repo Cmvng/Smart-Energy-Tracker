@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, varchar, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, varchar, pgEnum, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -13,6 +13,7 @@ export const usersTable = pgTable("users", {
   telegram_chat_id: text("telegram_chat_id"),
   avatar_url: text("avatar_url"),
   nickname: text("nickname"),
+  is_admin: boolean("is_admin").notNull().default(false),
   created_at: timestamp("created_at").notNull().defaultNow(),
 });
 

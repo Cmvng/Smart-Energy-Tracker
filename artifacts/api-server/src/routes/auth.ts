@@ -130,6 +130,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
       notification_frequency: user.notification_frequency,
       avatar_url: user.avatar_url,
       nickname: user.nickname,
+      is_admin: user.is_admin,
       created_at: user.created_at,
     });
   } catch (err) {
