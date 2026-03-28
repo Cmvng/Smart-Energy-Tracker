@@ -12,53 +12,35 @@ def clean_amount(s):
 def parse_date(s):
     if not s: return None
     s = str(s).strip().split(' ')[0]
-
-    # DD/MM/YY or DD/MM/YYYY - always day first (Nigerian/UK bank format)
-    m = re.match(r'^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$', s)
+    m = re.match(
+        r'^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$', s
+    )
     if m:
         day, month, year_raw = m.groups()
-        day = day.zfill(2)
-        month = month.zfill(2)
         yr = int(year_raw)
-        if yr < 100:
-            year = str(2000+yr) if yr < 50 else str(1900+yr)
-        else:
-            year = str(yr)
+        year = str(2000+yr) if yr<100 and yr<50 else (
+               str(1900+yr) if yr<100 else str(yr))
         try:
-            dt = datetime.strptime(f'{year}-{month}-{day}', '%Y-%m-%d')
+            dt = datetime.strptime(
+                f'{year}-{month.zfill(2)}-{day.zfill(2)}',
+                '%Y-%m-%d'
+            )
             if 2000 <= dt.year <= 2030:
                 return dt.strftime('%Y-%m-%d')
         except: pass
-
-    # YYYY-MM-DD (ISO format)
-    m = re.match(r'^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$', s)
+    m = re.match(
+        r'^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$', s
+    )
     if m:
         y, mo, d = m.groups()
         try:
-            dt = datetime.strptime(f'{y}-{mo.zfill(2)}-{d.zfill(2)}', '%Y-%m-%d')
+            dt = datetime.strptime(
+                f'{y}-{mo.zfill(2)}-{d.zfill(2)}',
+                '%Y-%m-%d'
+            )
             if 2000 <= dt.year <= 2030:
                 return dt.strftime('%Y-%m-%d')
         except: pass
-
-    # DD MMM YYYY (e.g. 05 Jan 2026)
-    months = {
-        'jan':'01','feb':'02','mar':'03','apr':'04',
-        'may':'05','jun':'06','jul':'07','aug':'08',
-        'sep':'09','oct':'10','nov':'11','dec':'12'
-    }
-    m = re.search(
-        r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})',
-        s, re.IGNORECASE
-    )
-    if m:
-        d, mn, y = m.groups()
-        mo = months[mn.lower()[:3]]
-        try:
-            dt = datetime.strptime(f'{y}-{mo}-{d.zfill(2)}', '%Y-%m-%d')
-            if 2000 <= dt.year <= 2030:
-                return dt.strftime('%Y-%m-%d')
-        except: pass
-
     return None
 
 INCOME_CATS = ['inward','credit','reversal','refund',
