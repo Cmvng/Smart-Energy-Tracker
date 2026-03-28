@@ -489,14 +489,14 @@ export default function Import() {
                 <div
                   key={i}
                   onClick={() => setTxList((l) => l.map((t, j) => j === i ? { ...t, selected: !t.selected } : t))}
-                  className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-start gap-3 cursor-pointer active:opacity-70"
+                  className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-start gap-2 overflow-hidden cursor-pointer active:opacity-70"
                   style={{ opacity: tx.selected ? 1 : 0.55 }}
                 >
                   <input type="checkbox" checked={tx.selected} readOnly
                     className="mt-0.5 w-5 h-5 rounded accent-[#00D37F] shrink-0" />
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0" style={{ minWidth: 0 }}>
                     <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="text-xs text-gray-400">{tx.date}</span>
+                      <span className="text-xs text-gray-400">{new Date(tx.date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                       <div className="flex items-center gap-1">
                         <span className="text-xs font-mono text-gray-400">{currencyFlag(tx.currency)} {tx.currency}</span>
                         <span className="font-bold text-sm" style={{ color: tx.type === "income" ? GREEN : RED }}>
@@ -504,7 +504,7 @@ export default function Import() {
                         </span>
                       </div>
                     </div>
-                    <p className="text-sm font-medium text-gray-800 truncate">{tx.description}</p>
+                    <p className="text-sm font-medium text-gray-800 truncate" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.description}</p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       <button
                         onClick={(e) => {
