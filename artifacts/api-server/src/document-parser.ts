@@ -1,4 +1,7 @@
 import { parse as csvParse } from "csv-parse/sync";
+import { createRequire } from "node:module";
+
+const _require = createRequire(import.meta.url);
 
 export interface ParsedTransaction {
   date: string;
@@ -12,9 +15,11 @@ export interface ParsedTransaction {
 export interface ParseResult {
   transactions?: ParsedTransaction[];
   error?: string;
+  locked?: boolean;
+  pageCount?: number;
   bank?: string;
   detected_currency?: string;
-  parse_method?: "csv" | "pdf-table" | "pdf-lines";
+  parse_method?: "csv" | "pdf-table" | "pdf-lines" | "pdf-ocr";
   skipped?: number;
 }
 
@@ -532,83 +537,181 @@ export async function parseCSV(buffer: Buffer): Promise<ParseResult> {
   }
 }
 
+// ─── OCR VIA pdftoppm + tesseract.js ──────────────────────────────────────────
+
+async function ocrPDF(buffer: Buffer): Promise<string> {
+  const { execSync } = await import("child_process");
+  const { mkdtempSync, writeFileSync, readdirSync, rmSync } = await import("fs");
+  const { join } = await import("path");
+  const { tmpdir } = await import("os");
+
+  const tmpDir = mkdtempSync(join(tmpdir(), "ine-ocr-"));
+  const pdfPath = join(tmpDir, "input.pdf");
+  const outPrefix = join(tmpDir, "page");
+
+  try {
+    writeFileSync(pdfPath, buffer);
+
+    // Convert each page to a 200-DPI PNG (uses system pdftoppm / poppler)
+    execSync(`pdftoppm -r 200 -png "${pdfPath}" "${outPrefix}"`, { timeout: 60_000 });
+
+    const images = readdirSync(tmpDir)
+      .filter((f) => f.endsWith(".png"))
+      .sort()
+      .map((f) => join(tmpDir, f));
+
+    if (images.length === 0) return "";
+
+    const Tesseract = await import("tesseract.js");
+    let allText = "";
+
+    for (const imgPath of images) {
+      console.log(`[OCR] Processing page: ${imgPath}`);
+      const worker = await Tesseract.createWorker("eng");
+      const { data: { text } } = await worker.recognize(imgPath);
+      await worker.terminate();
+      allText += text + "\n";
+    }
+
+    return allText;
+  } finally {
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+// ─── SHARED TEXT → TRANSACTIONS PARSER ────────────────────────────────────────
+
+function parseLinesIntoTransactions(
+  text: string,
+  detected_currency: string
+): { transactions: ParsedTransaction[]; skipped: number } {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const transactions: ParsedTransaction[] = [];
+  const seen = new Set<string>();
+  let skipped = 0;
+
+  function extractAmounts(line: string): Array<{ value: number; currency: string }> {
+    const matches = line.match(/[\d,]+\.?\d{0,2}/g) || [];
+    return matches
+      .map((m) => parseFloat(m.replace(/,/g, "")))
+      .filter((n) => !isNaN(n) && n > 0.01 && n < 100_000_000)
+      .map((value) => ({ value, currency: detected_currency }));
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const date = parseDate(line);
+    if (!date) continue;
+    if (shouldSkip(line)) { skipped++; continue; }
+
+    const ctx = [line, lines[i + 1] || "", lines[i + 2] || ""].join(" ");
+    if (shouldSkip(ctx)) { skipped++; continue; }
+
+    const allAmounts = extractAmounts(ctx);
+    if (allAmounts.length === 0) continue;
+
+    const { value: amount, currency: rowCurrency } = allAmounts[allAmounts.length - 1];
+
+    const descLine = lines[i + 1] || line;
+    const desc = descLine
+      .replace(/\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/g, "")
+      .replace(/\d{4}[\/\-\.]\d{2}[\/\-\.]\d{2}/g, "")
+      .replace(/[$£€₦₵₹¥]?[\d,]+\.?\d{0,2}/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
+
+    const key = `${date}|${amount}|${desc.slice(0, 20)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const det = detectType(ctx, false, null, null, false, false);
+    const type = det.type ?? "expense";
+    const confidence = det.confidence;
+
+    transactions.push({
+      date,
+      description: desc || "Transaction",
+      amount,
+      type,
+      currency: rowCurrency || detected_currency,
+      confidence,
+    });
+  }
+
+  transactions.sort((a, b) => a.date.localeCompare(b.date));
+  return { transactions, skipped };
+}
+
 // ─── PDF PARSER ───────────────────────────────────────────────────────────────
 
 export async function parsePDF(buffer: Buffer): Promise<ParseResult> {
   try {
-    const pdfParse = (await import("pdf-parse")).default;
+    const pdfParse: (buf: Buffer, opts?: any) => Promise<any> = _require("pdf-parse");
     const pdfData = await pdfParse(buffer);
-    const text = pdfData.text;
+    const textLength = (pdfData.text?.trim() || "").length;
+    const pageCount = pdfData.numpages || 1;
 
+    // ── LOCKED / ENCRYPTED PDF → try OCR fallback ──────────────────────────
+    if (textLength < 100) {
+      console.log(`[parsePDF] Locked PDF detected (textLength=${textLength}, pages=${pageCount}). Attempting OCR…`);
+      try {
+        const ocrText = await ocrPDF(buffer);
+        const ocrLength = ocrText.trim().length;
+        console.log(`[parsePDF] OCR extracted ${ocrLength} characters across ${pageCount} page(s)`);
+
+        if (ocrLength < 50) {
+          return { locked: true, pageCount, error: "locked_pdf" };
+        }
+
+        const bank = detectBank(ocrText);
+        const detected_currency = detectCurrency(ocrText);
+        const { transactions, skipped } = parseLinesIntoTransactions(ocrText, detected_currency);
+
+        if (transactions.length === 0) {
+          return { locked: true, pageCount, error: "locked_pdf" };
+        }
+
+        console.log(`[parsePDF] OCR succeeded → ${transactions.length} transactions (${skipped} skipped)`);
+        return { transactions, bank, detected_currency, parse_method: "pdf-ocr", skipped };
+      } catch (ocrErr: any) {
+        console.error("[parsePDF] OCR failed:", ocrErr?.message);
+        return { locked: true, pageCount, error: "locked_pdf" };
+      }
+    }
+
+    // ── NORMAL DIGITAL PDF ──────────────────────────────────────────────────
+    console.log(`[parsePDF] Normal PDF (textLength=${textLength}). Using text extraction.`);
+    const text = pdfData.text;
     const bank = detectBank(text);
     const detected_currency = detectCurrency(text);
-
-    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-    const transactions: ParsedTransaction[] = [];
-    const seen = new Set<string>();
-    let skipped = 0;
-
-    function extractAmounts(line: string): Array<{ value: number; currency: string }> {
-      const matches = line.match(/[\d,]+\.?\d{0,2}/g) || [];
-      return matches
-        .map((m) => parseFloat(m.replace(/,/g, "")))
-        .filter((n) => !isNaN(n) && n > 0.01 && n < 100_000_000)
-        .map((value) => ({ value, currency: detected_currency }));
-    }
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const date = parseDate(line);
-      if (!date) continue;
-      if (shouldSkip(line)) { skipped++; continue; }
-
-      // Collect up to 3 lines for context
-      const ctx = [line, lines[i + 1] || "", lines[i + 2] || ""].join(" ");
-      if (shouldSkip(ctx)) { skipped++; continue; }
-
-      const allAmounts = extractAmounts(ctx);
-      if (allAmounts.length === 0) continue;
-
-      const { value: amount, currency: rowCurrency } = allAmounts[allAmounts.length - 1];
-
-      // Description: strip dates and numbers from contextual lines
-      const descLine = lines[i + 1] || line;
-      const desc = descLine
-        .replace(/\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/g, "")
-        .replace(/\d{4}[\/\-\.]\d{2}[\/\-\.]\d{2}/g, "")
-        .replace(/[$£€₦₵₹¥]?[\d,]+\.?\d{0,2}/g, "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 120);
-
-      const key = `${date}|${amount}|${desc.slice(0, 20)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      // Detect type from combined context
-      const det = detectType(ctx, false, null, null, false, false);
-      const type = det.type ?? "expense";
-      const confidence = det.confidence;
-
-      transactions.push({
-        date,
-        description: desc || "Transaction",
-        amount,
-        type,
-        currency: rowCurrency || detected_currency,
-        confidence,
-      });
-    }
-
-    transactions.sort((a, b) => a.date.localeCompare(b.date));
+    const { transactions, skipped } = parseLinesIntoTransactions(text, detected_currency);
 
     if (transactions.length === 0) {
       return { error: "Could not extract transactions from PDF. Try exporting as CSV from your bank instead." };
     }
 
+    console.log(`[parsePDF] Text extraction → ${transactions.length} transactions (${skipped} skipped)`);
     return { transactions, bank, detected_currency, parse_method: "pdf-lines", skipped };
   } catch (err: any) {
-    return { error: "Could not extract transactions from PDF. Try exporting as CSV from your bank instead." };
+    console.error("[parsePDF] Error:", err?.message);
+    // If pdf-parse itself threw (e.g. DOMMatrix, encryption error), try OCR as last resort
+    try {
+      console.log("[parsePDF] pdf-parse threw, attempting OCR fallback...");
+      const ocrText = await ocrPDF(buffer);
+      if (ocrText.trim().length >= 50) {
+        const bank = detectBank(ocrText);
+        const detected_currency = detectCurrency(ocrText);
+        const { transactions, skipped } = parseLinesIntoTransactions(ocrText, detected_currency);
+        if (transactions.length > 0) {
+          console.log(`[parsePDF] OCR fallback succeeded → ${transactions.length} transactions`);
+          return { transactions, bank, detected_currency, parse_method: "pdf-ocr", skipped };
+        }
+      }
+    } catch (ocrErr: any) {
+      console.error("[parsePDF] OCR fallback also failed:", ocrErr?.message);
+    }
+    return { locked: true, error: "locked_pdf" };
   }
 }
 

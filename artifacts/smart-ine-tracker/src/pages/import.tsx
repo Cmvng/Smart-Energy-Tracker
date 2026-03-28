@@ -62,7 +62,7 @@ export default function Import() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [stage, setStage] = useState<"idle" | "scanning" | "review" | "importing" | "success" | "error">("idle");
+  const [stage, setStage] = useState<"idle" | "scanning" | "review" | "importing" | "success" | "error" | "locked">("idle");
   const [scanMsg, setScanMsg] = useState("Reading your document...");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -80,7 +80,15 @@ export default function Import() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const scanMessages = ["Reading your document...", "Finding transactions...", "Almost done..."];
+  const scanMessages = [
+    "Reading your document...",
+    "Finding transactions...",
+    "🔒 Secured PDF detected...",
+    "📸 Converting pages to images...",
+    "🔍 Reading with advanced scanner...",
+    "✨ Extracting transactions...",
+    "Almost done...",
+  ];
   const scanMsgRef = useRef(0);
 
   const fetchHistory = useCallback(async () => {
@@ -134,6 +142,10 @@ export default function Import() {
         body: formData,
       });
       const data = await res.json();
+      if (data.locked) {
+        setStage("locked");
+        return;
+      }
       if (!res.ok) {
         setErrorMsg(friendlyError(data.error || "Could not read this file."));
         setStage("error");
@@ -267,6 +279,37 @@ export default function Import() {
           <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-4 text-red-700 text-sm">
             {errorMsg}
             <button onClick={reset} className="mt-2 text-xs font-bold underline block">Try again</button>
+          </div>
+        )}
+
+        {/* Locked PDF card */}
+        {stage === "locked" && (
+          <div className="rounded-2xl p-5 mb-4" style={{ background: "rgba(255,184,0,0.10)", border: "1.5px solid rgba(255,184,0,0.45)" }}>
+            <p className="text-lg font-bold mb-2" style={{ color: "#7a4f00" }}>🔒 This PDF appears to be a secured or e-signed document.</p>
+            <p className="text-sm mb-3" style={{ color: "#7a4f00" }}>
+              Your bank has locked it to prevent copying — this is normal for official statements.
+            </p>
+            <p className="text-sm font-bold mb-1" style={{ color: "#7a4f00" }}>To import your transactions, try one of these:</p>
+
+            <div className="rounded-xl p-3 mb-2 text-sm" style={{ background: "rgba(255,255,255,0.6)", color: "#5a3800" }}>
+              <p className="font-bold mb-1">Option 1 (Easiest) — Download as CSV from your bank app</p>
+              <ul className="text-xs space-y-0.5 list-none pl-0">
+                <li>🏦 <strong>GTBank:</strong> App → Accounts → Statement → CSV</li>
+                <li>🏦 <strong>Access:</strong> App → More → Statement → Export CSV</li>
+                <li>🏦 <strong>UBA:</strong> Internet banking → Statement → Download</li>
+                <li>🏦 <strong>Zenith:</strong> App → Account Statement → CSV</li>
+                <li>🏦 <strong>Others:</strong> Look for <em>Export</em> or <em>Download</em> in your statement section</li>
+              </ul>
+            </div>
+
+            <div className="rounded-xl p-3 mb-3 text-sm" style={{ background: "rgba(255,255,255,0.6)", color: "#5a3800" }}>
+              <p className="font-bold mb-0.5">Option 2 — Request an unlocked statement from your bank</p>
+              <p className="text-xs">Ask for a <em>"digital statement"</em> — not a <em>"certified copy"</em></p>
+            </div>
+
+            <button onClick={reset} className="w-full py-2 rounded-xl text-sm font-bold" style={{ background: AMBER, color: "#fff" }}>
+              Try a Different File
+            </button>
           </div>
         )}
 
@@ -460,7 +503,7 @@ export default function Import() {
         )}
 
         {/* Import History */}
-        {(stage === "idle" || stage === "error") && (
+        {(stage === "idle" || stage === "error" || stage === "locked") && (
           <div className="mb-4">
             <button
               onClick={() => setHistoryOpen((o) => !o)}

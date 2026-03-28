@@ -59,6 +59,12 @@ router.post("/upload", requireAuth, (req: AuthRequest, res: Response) => {
 
     const result = await detectAndParse(req.file.buffer, filename, req.file.mimetype);
 
+    if (result.locked) {
+      await db.update(documentImportsTable).set({ status: "failed" }).where(eq(documentImportsTable.id, importRecord.id));
+      res.status(200).json({ locked: true, pageCount: result.pageCount ?? 1 });
+      return;
+    }
+
     if (result.error || !result.transactions) {
       await db.update(documentImportsTable).set({ status: "failed" }).where(eq(documentImportsTable.id, importRecord.id));
       res.status(400).json({ error: result.error || "Parse failed" });

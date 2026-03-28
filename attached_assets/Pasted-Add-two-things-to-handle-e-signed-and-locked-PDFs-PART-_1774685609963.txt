@@ -1,0 +1,103 @@
+Add two things to handle e-signed and locked PDFs:
+
+PART 1 — BETTER ERROR MESSAGE FOR LOCKED PDFs:
+When pdf-parse extracts less than 100 characters 
+of text from a PDF (meaning it's locked/encrypted):
+
+Instead of showing a generic error, show this 
+specific helpful message on the frontend:
+
+"🔒 This PDF appears to be a secured or 
+e-signed document.
+
+Your bank has locked it to prevent copying — 
+this is normal for official statements.
+
+To import your transactions, try one of these:
+
+Option 1 (Easiest):
+Download as CSV from your bank app
+- GTBank: App → Accounts → Statement → CSV
+- Access: App → More → Statement → Export CSV
+- UBA: Internet banking → Statement → Download
+- Zenith: App → Account Statement → CSV
+- Other banks: Look for Export or Download 
+  in your statement section
+
+Option 2:
+Request an unlocked statement from your bank
+(ask for 'digital statement' not 'certified copy')"
+
+Show this as a clear, friendly card — not a 
+red error. Use an amber/yellow background.
+
+PART 2 — DETECT LOCKED PDF:
+In the parsePDF function, after extracting text:
+
+const textLength = data.text?.trim().length || 0
+const pageCount = data.numpages || 1
+
+if (textLength < 100) {
+  return {
+    success: false,
+    locked: true,
+    transactions: [],
+    totalFound: 0,
+    message: 'locked_pdf',
+    pageCount: pageCount
+  }
+}
+
+In the API route, check for locked: true and 
+return status 200 (not error) with the locked 
+flag so frontend shows the helpful message 
+instead of a red error.
+
+PART 3 — INSTALL TESSERACT FOR FREE OCR:
+Install these packages:
+npm install tesseract.js pdf-poppler
+
+Add a new function convertPDFToImages(buffer):
+Use pdf-poppler to convert each PDF page 
+to a PNG image in memory.
+
+Add a new function ocrImage(imageBuffer):
+Use tesseract.js to read text from image:
+const worker = await createWorker('eng')
+const { data: { text } } = await worker.recognize(imageBuffer)
+await worker.terminate()
+return text
+
+Update the main parsePDF function:
+1. Try pdf-parse text extraction first
+2. If textLength < 100 (locked PDF):
+   - Show loading message: "Detected secured PDF, 
+     trying advanced scanning..."
+   - Convert PDF pages to images with pdf-poppler
+   - Run tesseract OCR on each page
+   - Combine all text
+   - Run the universal transaction parser 
+     on the combined text
+   - Return results
+
+Update the frontend loading messages for 
+locked PDFs:
+"🔒 Secured PDF detected..."
+"📸 Converting pages to images..."
+"🔍 Reading with advanced scanner..."
+"✨ Extracting transactions..."
+
+This way:
+- Normal digital PDFs → fast text extraction (free)
+- Locked/e-signed PDFs → Tesseract OCR (free, slower)
+- CSV files → instant (free)
+
+After building test with:
+1. A normal PDF → should use text extraction
+2. Upload the locked bank statement → should 
+   try OCR automatically
+3. A CSV → should work instantly
+
+Show console logs for which method was used.
+Rebuild: cd client && npm run build
+Restart server.
