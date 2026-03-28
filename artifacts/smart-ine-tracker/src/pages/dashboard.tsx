@@ -268,7 +268,7 @@ export default function Dashboard() {
 
           {/* Transactions */}
           <div className="px-5 py-5 md:px-0 md:py-6">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3" style={{ width: '100%', overflow: 'hidden' }}>
               <h3 className="text-base font-bold" style={{ color: NAVY }}>
                 Recent Transactions
                 {!txLoading && txList.length > 0 && (
@@ -475,8 +475,8 @@ function TxRow({ tx, onEdit, onDelete }: { tx: any; onEdit: (tx: any) => void; o
       >
         {isIncome ? "💰" : "💸"}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-gray-900 truncate text-sm">{tx.notes || (isIncome ? "Income" : "Expense")}</p>
+      <div className="flex-1 min-w-0" style={{ minWidth: 0, overflow: 'hidden' }}>
+        <p className="font-semibold text-gray-900 truncate text-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.notes || (isIncome ? "Income" : "Expense")}</p>
         <p className="text-xs text-gray-400 mt-0.5">
           {formatDistanceToNow(new Date(tx.transacted_at), { addSuffix: true })}
         </p>
