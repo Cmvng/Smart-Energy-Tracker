@@ -1,10 +1,11 @@
 import { useAuth } from "@/lib/auth";
-import { useGetCurrencies as useGeneratedGetCurrencies } from "@workspace/api-client-react";
+import { getGetCurrenciesQueryKey, useGetCurrencies as useGeneratedGetCurrencies } from "@workspace/api-client-react";
 
 export function useCurrencies() {
   const { token } = useAuth();
   return useGeneratedGetCurrencies({
-    query: { 
+    query: {
+      queryKey: getGetCurrenciesQueryKey(),
       enabled: !!token, 
       staleTime: 1000 * 60 * 60 // 1 hour
     },

@@ -3,6 +3,8 @@ import {
   useListTransactions as useGeneratedList,
   useGetTransactionSummary as useGeneratedSummary,
   useCreateTransaction as useGeneratedCreate,
+  getListTransactionsQueryKey,
+  getGetTransactionSummaryQueryKey,
   ListTransactionsParams,
   GetTransactionSummaryParams
 } from "@workspace/api-client-react";
@@ -11,7 +13,8 @@ import { useQueryClient } from "@tanstack/react-query";
 export function useTransactions(params?: ListTransactionsParams) {
   const { token } = useAuth();
   return useGeneratedList(params, {
-    query: { 
+    query: {
+      queryKey: getListTransactionsQueryKey(params),
       enabled: !!token,
       staleTime: 1000 * 30 // 30 seconds
     },
@@ -24,7 +27,8 @@ export function useTransactions(params?: ListTransactionsParams) {
 export function useTransactionSummary(params?: GetTransactionSummaryParams) {
   const { token } = useAuth();
   return useGeneratedSummary(params, {
-    query: { 
+    query: {
+      queryKey: getGetTransactionSummaryQueryKey(params),
       enabled: !!token,
       staleTime: 1000 * 30
     },
