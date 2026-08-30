@@ -18,15 +18,11 @@ Railway is the recommended target for this project because the application uses 
 
 Optional features use `OPENAI_API_KEY`, `EXCHANGE_RATES_API_KEY`, and `TELEGRAM_BOT_TOKEN`. Keep `SEED_DEMO_USER=false` in production.
 
-## First database setup
+## Database setup
 
-Run this once against the Railway PostgreSQL database before opening registration:
+The container applies the current Drizzle schema before starting the web process. If schema initialization fails, the app does not start and Railway's health check keeps the broken deployment out of service.
 
-```bash
-pnpm db:push
-```
-
-Do not run schema push automatically on every web process restart. Future production schema changes should be converted to versioned migrations.
+Before introducing destructive schema changes, replace `drizzle-kit push` with reviewed, versioned migrations.
 
 ## Health check
 

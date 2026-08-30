@@ -23,4 +23,4 @@ WORKDIR /app
 COPY --from=build /app /app
 
 EXPOSE 3000
-CMD ["pnpm", "start"]
+CMD ["sh", "-c", "pnpm db:push && exec pnpm start"]
