@@ -4,7 +4,13 @@ import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-const JWT_SECRET = process.env.JWT_SECRET || "smart-ine-tracker-secret-key";
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("JWT_SECRET must be configured with at least 32 characters.");
+  }
+  return secret;
+}
 
 export interface AuthRequest extends Request {
   userId?: string;
@@ -19,7 +25,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
 
   const token = authHeader.split(" ")[1];
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
+    const payload = jwt.verify(token, getJwtSecret()) as { userId: string };
     req.userId = payload.userId;
     next();
   } catch {
@@ -28,7 +34,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
 }
 
 export function createToken(userId: string): string {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign({ userId }, getJwtSecret(), { expiresIn: "7d" });
 }
 
 export async function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
@@ -40,7 +46,7 @@ export async function requireAdmin(req: AuthRequest, res: Response, next: NextFu
   const token = authHeader.split(" ")[1];
   let userId: string;
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as { userId: string };
+    const payload = jwt.verify(token, getJwtSecret()) as { userId: string };
     userId = payload.userId;
   } catch {
     res.status(401).json({ error: "unauthorized", message: "Invalid or expired token" });
