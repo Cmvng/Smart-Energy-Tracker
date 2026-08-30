@@ -30,6 +30,5 @@ channel = "stable-25_05"
 
 [userenv]
 
+# Configure secrets in the hosting environment, never in source control.
 [userenv.shared]
-JWT_SECRET = "smartINE2024SecretKey99xyz"
-EXCHANGE_RATES_API_KEY = "PLACEHOLDER_REPLACE_ME"

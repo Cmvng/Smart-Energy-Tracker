@@ -24,7 +24,7 @@ export interface ParseResult {
   warning?: string;
   bank?: string;
   detected_currency?: string;
-  parse_method?: "csv" | "pdf-table" | "pdf-lines" | "pdf-ocr" | "ai-vision";
+  parse_method?: "csv" | "pdf-table" | "pdf-lines" | "pdf-ocr" | "ai-vision" | "excel-python";
   skipped?: number;
 }
 
@@ -743,7 +743,9 @@ async function readWithAI(
       date: parseDate(r.date) ?? r.date,
       description: String(r.description || "Transaction").slice(0, 120),
       amount: Math.abs(Number(r.amount)) || 0,
-      type: String(r.type).toLowerCase().includes("income") ? "income" : "expense",
+      type: String(r.type).toLowerCase().includes("income")
+        ? ("income" as const)
+        : ("expense" as const),
       currency: String(r.currency || "USD").toUpperCase().slice(0, 3),
       confidence: "high" as const,
     }))

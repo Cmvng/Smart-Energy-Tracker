@@ -4,6 +4,8 @@ import pinoHttp from "pino-http";
 import rateLimit from "express-rate-limit";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const app: Express = express();
 
@@ -29,9 +31,25 @@ app.use(
   }),
 );
 
-app.use(cors());
+const configuredOrigins = (process.env.APP_URL ?? "")
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || process.env.NODE_ENV !== "production") {
+        callback(null, true);
+        return;
+      }
+      callback(null, configuredOrigins.includes(origin.replace(/\/$/, "")));
+    },
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.disable("x-powered-by");
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -43,5 +61,19 @@ const limiter = rateLimit({
 
 app.use("/api", limiter);
 app.use("/api", router);
+
+if (process.env.NODE_ENV === "production") {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const frontendDir = path.resolve(currentDir, "../../smart-ine-tracker/dist/public");
+
+  app.use(express.static(frontendDir, { maxAge: "1h", index: false }));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api/") || !req.accepts("html")) {
+      next();
+      return;
+    }
+    res.sendFile(path.join(frontendDir, "index.html"));
+  });
+}
 
 export default app;

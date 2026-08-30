@@ -1,24 +1,25 @@
 import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AddSheetProvider } from "@/lib/add-sheet-context";
-import Login from "@/pages/login";
-import Register from "@/pages/register";
-import Dashboard from "@/pages/dashboard";
-import Analytics from "@/pages/analytics";
-import Settings from "@/pages/settings";
-import History from "@/pages/history";
-import Import from "@/pages/import";
-import NotFound from "@/pages/not-found";
 import BottomNav from "@/components/BottomNav";
 import Sidebar from "@/components/Sidebar";
-import Landing, { hasVisited } from "@/pages/landing";
+import Landing from "@/pages/landing";
 import Onboarding, { isOnboardingDone } from "@/pages/onboarding";
-import AdminPage from "@/pages/admin";
+
+const Login = lazy(() => import("@/pages/login"));
+const Register = lazy(() => import("@/pages/register"));
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const Analytics = lazy(() => import("@/pages/analytics"));
+const Settings = lazy(() => import("@/pages/settings"));
+const History = lazy(() => import("@/pages/history"));
+const Import = lazy(() => import("@/pages/import"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const AdminPage = lazy(() => import("@/pages/admin"));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -129,7 +130,9 @@ function App() {
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <AuthProvider>
             <AddSheetProvider>
-              <AppRouter />
+              <Suspense fallback={<Spinner />}>
+                <AppRouter />
+              </Suspense>
             </AddSheetProvider>
           </AuthProvider>
         </WouterRouter>

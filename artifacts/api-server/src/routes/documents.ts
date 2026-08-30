@@ -264,7 +264,7 @@ router.get("/history", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 router.delete("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const { id } = req.params;
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   try {
     const [imp] = await db.select().from(documentImportsTable)
       .where(and(eq(documentImportsTable.id, id), eq(documentImportsTable.user_id, req.userId!)));

@@ -26,11 +26,13 @@ app.listen(port, async (err) => {
   logger.info({ port }, "Server listening");
   console.log("DB connected:", !!process.env.DATABASE_URL);
   console.log("JWT_SECRET set:", !!process.env.JWT_SECRET);
-  console.log("OpenAI key present:", !!process.env.OPENAI_API_KEY, "length:", process.env.OPENAI_API_KEY?.length);
+  console.log("OpenAI key present:", !!process.env.OPENAI_API_KEY);
 
   logDocumentParserStatus();
   await seedCurrencies();
-  await seedDemoUser();
+  if (process.env.SEED_DEMO_USER === "true") {
+    await seedDemoUser();
+  }
   startNotificationCron();
   startTelegramBot();
   startTelegramCrons();

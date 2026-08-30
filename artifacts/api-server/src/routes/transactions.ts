@@ -270,7 +270,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 router.patch("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const { id } = req.params;
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const { type, amount_original, currency_code, notes, transacted_at } = req.body;
 
   try {
@@ -314,7 +314,7 @@ router.patch("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 router.delete("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  const { id } = req.params;
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   try {
     const userAccounts = await db.select({ id: accountsTable.id }).from(accountsTable).where(eq(accountsTable.user_id, req.userId!));
     const accountIds = userAccounts.map((a) => a.id);
