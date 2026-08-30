@@ -24,7 +24,7 @@ export interface ParseResult {
   warning?: string;
   bank?: string;
   detected_currency?: string;
-  parse_method?: "csv" | "pdf-table" | "pdf-lines" | "pdf-ocr" | "ai-vision";
+  parse_method?: "csv" | "excel-python" | "pdf-table" | "pdf-lines" | "pdf-ocr" | "ai-vision";
   skipped?: number;
 }
 
@@ -739,7 +739,7 @@ async function readWithAI(
 
   const transactions: ParsedTransaction[] = aiRows
     .filter((r) => r.date && r.amount && r.type)
-    .map((r) => ({
+    .map((r): ParsedTransaction => ({
       date: parseDate(r.date) ?? r.date,
       description: String(r.description || "Transaction").slice(0, 120),
       amount: Math.abs(Number(r.amount)) || 0,
